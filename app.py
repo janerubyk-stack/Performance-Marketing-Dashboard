@@ -853,6 +853,7 @@ drill_previous = drill_df[
     & (drill_df["date"].dt.normalize() <= pd.Timestamp(previous_end))
 ]
 
+
 def campaign_aggregate(d):
     if d.empty:
         return pd.DataFrame(
@@ -872,6 +873,7 @@ def campaign_aggregate(d):
         lambda r: safe_cvr(r["click"], r["conversion"]), axis=1
     )
     return x
+
 
 cc = campaign_aggregate(drill_current).rename(
     columns={
@@ -899,45 +901,138 @@ if not cc.empty or not pp.empty:
         "비교 광고비", "비교 전환수", "비교 CPA", "비교 CVR",
     ]:
         if c in drill.columns:
-            drill[c] = pd.to_numeric(
-                drill[c], errors="coerce"
-            )
+            drill[c] = pd.to_numeric(drill[c], errors="coerce")
 
     drill["광고비 변화"] = drill.apply(
-        lambda r: pct_change(r["기준 광고비"], r["비교 광고비"]),
-        axis=1,
+        lambda r: pct_change(r["기준 광고비"], r["비교 광고비"]), axis=1
     )
     drill["전환수 변화"] = drill.apply(
-        lambda r: pct_change(r["기준 전환수"], r["비교 전환수"]),
-        axis=1,
+        lambda r: pct_change(r["기준 전환수"], r["비교 전환수"]), axis=1
     )
     drill["CPA 변화"] = drill.apply(
-        lambda r: pct_change(r["기준 CPA"], r["비교 CPA"]),
-        axis=1,
+        lambda r: pct_change(r["기준 CPA"], r["비교 CPA"]), axis=1
+    )
+    drill["CVR 변화"] = drill.apply(
+        lambda r: pct_change(r["기준 CVR"], r["비교 CVR"]), axis=1
     )
 
     drill = drill.sort_values(
-        "기준 전환수", ascending=False
+        "기준 전환수", ascending=False, na_position="last"
     )
 
-    drill_display = pd.DataFrame()
+    # ========================================================
+    # 캠페인을 가로 / 지표를 세로로 배치
+    # ========================================================
+    metrics = [
+        ("기준 광고비", "기준 광고비", "won"),
+        ("비교 광고비", "비교 광고비", "won"),
+        ("광고비 변화", "광고비 변화", "change"),
+        ("기준 전환수", "기준 전환수", "num"),
+        ("비교 전환수", "비교 전환수", "num"),
+        ("전환수 변화", "전환수 변화", "change"),
+        ("기준 CPA", "기준 CPA", "won"),
+        ("비교 CPA", "비교 CPA", "won"),
+        ("CPA 변화", "CPA 변화", "change"),
+        ("기준 CVR", "기준 CVR", "pct"),
+        ("비교 CVR", "비교 CVR", "pct"),
+        ("CVR 변화", "CVR 변화", "change"),
+    ]
 
-    drill_display["캠페인"] = drill["campaign"]
-    drill_display["기준 광고비"] = drill["기준 광고비"].apply(fmt_won)
-    drill_display["비교 광고비"] = drill["비교 광고비"].apply(fmt_won)
-    drill_display["광고비 변화"] = drill["광고비 변화"].apply(fmt_pct)
-    drill_display["기준 전환수"] = drill["기준 전환수"].apply(fmt_num)
-    drill_display["비교 전환수"] = drill["비교 전환수"].apply(fmt_num)
-    drill_display["전환수 변화"] = drill["전환수 변화"].apply(fmt_pct)
-    drill_display["기준 CPA"] = drill["기준 CPA"].apply(fmt_won)
-    drill_display["비교 CPA"] = drill["비교 CPA"].apply(fmt_won)
-    drill_display["CPA 변화"] = drill["CPA 변화"].apply(fmt_pct)
+    table_rows = []
 
-    st.dataframe(
-        drill_display,
-        use_container_width=True,
-        hide_index=True,
+    for source_col, label, value_type in metrics:
+        row = {"지표": label}
+
+        for _, r in drill.iterrows():
+            campaign = str(r["campaign"])
+            value = r.get(source_col, np.nan)
+
+            if value_type == "won":
+                row[campaign] = fmt_won(value)
+            elif value_type == "num":
+                row[campaign] = fmt_num(value)
+            elif value_type == "pct":
+                row[campaign] = (
+                    "-" if pd.isna(value) else f"{value:.2f}%"
+                )
+            else:
+                row[campaign] = arrow_pct(value)
+
+        table_rows.append(row)
+
+    drill_display = pd.DataFrame(table_rows)
+
+    # HTML 표를 사용해 변화율 색상과 화살표 유지
+    html = drill_display.to_html(
+        index=False,
+        escape=False,
+        classes="comparison-table campaign-table",
     )
+
+    st.markdown(
+        """
+        <style>
+        .campaign-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+            min-width: max-content;
+        }
+
+        .campaign-table th {
+            background: #f3f4f6;
+            font-weight: 700;
+            padding: 9px 10px;
+            border-bottom: 1px solid #d1d5db;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .campaign-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .campaign-table th:first-child,
+        .campaign-table td:first-child {
+            text-align: left;
+            font-weight: 700;
+            background: #fafafa;
+            position: sticky;
+            left: 0;
+            z-index: 2;
+        }
+
+        .campaign-table th:first-child {
+            z-index: 3;
+        }
+
+        .campaign-table .up {
+            color: #dc2626;
+            font-weight: 700;
+        }
+
+        .campaign-table .down {
+            color: #2563eb;
+            font-weight: 700;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # 캠페인이 많아도 가로 스크롤로 확인할 수 있도록 컨테이너 구성
+    st.markdown(
+        f"""
+        <div style="overflow-x:auto; width:100%;">
+            {html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 else:
     st.info("선택된 조건에서 캠페인 데이터가 없습니다.")
 
