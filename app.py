@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-from datetime import timedelta
+from openai import OpenAI
+from io import StringIO
+from datetime import timedelta, date
 import calendar
-import html
 
 # ============================================================
 # 0. 페이지 설정
@@ -15,6 +16,20 @@ st.set_page_config(
     page_icon="📈",
     layout="wide"
 )
+
+
+# ============================================================
+# OpenAI 설정
+# ============================================================
+
+def get_openai_client():
+
+    if "OPENAI_API_KEY" not in st.secrets:
+        return None
+
+    return OpenAI(
+        api_key=st.secrets["OPENAI_API_KEY"]
+    )
 
 # ============================================================
 # 1. Google Sheets 설정
@@ -1403,6 +1418,235 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+
+# ============================================================
+# AI 성과 분석
+# ============================================================
+
+def generate_ai_analysis(
+    comparison_df,
+    current_period_text,
+    previous_period_text,
+    period_type
+):
+
+    client = get_openai_client()
+
+    if client is None:
+
+        return (
+            "⚠️ OpenAI API Key가 설정되어 있지 않습니다.\n\n"
+            "Streamlit Cloud → Settings → Secrets에서 "
+            "`OPENAI_API_KEY`를 설정해주세요."
+        )
+
+    if comparison_df.empty:
+
+        return "분석할 데이터가 없습니다."
+
+    analysis_df = comparison_df.copy()
+
+    # --------------------------------------------------------
+    # AI에게 전달할 데이터 정리
+    # --------------------------------------------------------
+
+    analysis_data = []
+
+    for _, row in analysis_df.iterrows():
+
+        analysis_data.append({
+
+            "매체": str(row["media"]),
+
+            "기준 광고비":
+                round(float(row["spend_current"]), 0),
+
+            "비교 광고비":
+                round(float(row["spend_previous"]), 0),
+
+            "광고비 변화율":
+                round(float(row["spend_change"]), 1)
+                if pd.notna(row["spend_change"])
+                else None,
+
+            "기준 전환수":
+                round(float(row["conversion_current"]), 0),
+
+            "비교 전환수":
+                round(float(row["conversion_previous"]), 0),
+
+            "전환 변화율":
+                round(float(row["conversion_change"]), 1)
+                if pd.notna(row["conversion_change"])
+                else None,
+
+            "기준 CPA":
+                round(float(row["CPA_current"]), 0)
+                if pd.notna(row["CPA_current"])
+                else None,
+
+            "비교 CPA":
+                round(float(row["CPA_previous"]), 0)
+                if pd.notna(row["CPA_previous"])
+                else None,
+
+            "CPA 변화율":
+                round(float(row["CPA_change"]), 1)
+                if pd.notna(row["CPA_change"])
+                else None,
+
+            "기준 CVR":
+                round(float(row["CVR_current"]), 2)
+                if pd.notna(row["CVR_current"])
+                else None,
+
+            "비교 CVR":
+                round(float(row["CVR_previous"]), 2)
+                if pd.notna(row["CVR_previous"])
+                else None,
+
+            "CVR 변화율":
+                round(float(row["CVR_change"]), 1)
+                if pd.notna(row["CVR_change"])
+                else None
+        })
+
+    # --------------------------------------------------------
+    # 프롬프트
+    # --------------------------------------------------------
+
+    prompt = f"""
+너는 10년차 퍼포먼스 마케팅 전문가다.
+
+아래 광고 성과 데이터를 분석해서
+실무자가 바로 의사결정을 할 수 있도록 분석해라.
+
+[비교 기간]
+기준 기간: {current_period_text}
+비교 기간: {previous_period_text}
+비교 유형: {period_type}
+
+[분석 데이터]
+{analysis_data}
+
+반드시 다음 순서로 작성해라.
+
+## 1. 전체 성과 요약
+
+광고비, 전환수, CPA, CVR의 변화를 종합해서
+현재 성과가 좋아졌는지 나빠졌는지 설명한다.
+
+단순히 숫자를 나열하지 말고
+성과의 방향성을 설명한다.
+
+## 2. 핵심 원인 추론
+
+성과 변화의 원인을 추론한다.
+
+특히 다음 관계를 확인한다.
+
+광고비 → 전환수 → CPA → CVR
+
+예를 들어
+
+- 광고비 증가 대비 전환 증가가 충분한가?
+- 전환 증가가 CPA 악화 없이 발생했는가?
+- CPA 악화의 원인이 CVR 하락일 가능성이 있는가?
+- 예산 확대 과정에서 효율이 떨어지고 있는가?
+- 효율은 좋아졌지만 볼륨이 감소하고 있는가?
+
+데이터가 직접 증명하지 못하는 내용은
+확정적으로 말하지 말고
+"가능성이 있습니다", "확인 필요"라고 표현한다.
+
+## 3. 매체별 진단
+
+각 매체를 분석한다.
+
+각 매체에 대해
+
+- 확대
+- 유지
+- 관찰
+- 축소 검토
+
+중 하나를 판단한다.
+
+판단 근거를 반드시 숫자로 설명한다.
+
+## 4. 우선순위
+
+다음 3가지 그룹을 선정한다.
+
+### 확대 후보
+전환과 CPA가 동시에 좋은 매체
+
+### 효율 개선 후보
+전환은 있지만 CPA가 악화된 매체
+
+### 점검 후보
+전환 감소와 CPA 악화가 동시에 발생한 매체
+
+## 5. 실행 전략
+
+퍼포먼스 마케팅 실무 관점에서
+구체적인 액션을 제안한다.
+
+예:
+
+- 예산 재배분
+- 입찰 전략 점검
+- 소재 A/B 테스트
+- 타겟 세분화
+- 랜딩페이지 개선
+- CVR 개선
+- 저효율 캠페인 축소
+- 고효율 캠페인 확장
+
+추상적인 표현은 피한다.
+
+"최적화가 필요합니다"가 아니라
+
+"CPA가 악화된 매체의 저효율 캠페인 예산을
+고효율 캠페인으로 10~20% 재배분하고
+CVR 하락 원인을 랜딩페이지와 소재별로 분해해서 확인"
+
+처럼 실행 가능한 형태로 제안한다.
+
+## 6. 마케터에게 가장 중요한 한 가지
+
+현재 데이터만 보고
+가장 먼저 해야 할 액션을 딱 하나 선정한다.
+
+형식:
+
+**🎯 최우선 액션**
+→ 내용
+
+마지막으로 전체 분석을
+퍼포먼스 마케터가 팀장에게 보고하는 것처럼
+간결하고 명확하게 작성한다.
+"""
+
+    # --------------------------------------------------------
+    # OpenAI API 호출
+    # --------------------------------------------------------
+
+    try:
+
+        response = client.responses.create(
+            model="gpt-5.6-luna",
+            input=prompt
+        )
+
+        return response.output_text
+
+    except Exception as e:
+
+        return (
+            "❌ AI 분석 중 오류가 발생했습니다.\n\n"
+            f"오류 내용: {e}"
+        )
 
 # ============================================================
 # 15. 성과 해석
