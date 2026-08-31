@@ -1723,11 +1723,11 @@ def generate_comments(data):
         if worst_cpa_change["CPA_change"] > 0:
 
     comments.append(
-        f"⚠️ **CPA 악화:** "
-        f"{worst_cpa_change['media']}의 CPA가 "
-        f"{worst_cpa_change['CPA_change']:+,.1f}% "
-        f"상승했습니다."
-   )
+    f"⚠️ **CPA 악화:** "
+    f"{worst_cpa_change['media']}의 CPA가 "
+    f"{worst_cpa_change['CPA_change']:+,.1f}% "
+    f"상승했습니다."
+)
     return comments
 
 
