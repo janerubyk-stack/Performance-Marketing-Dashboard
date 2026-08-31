@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from openai import OpenAI
-from datetime import timedelta
+from io import StringIO
+from datetime import timedelta, date
 import calendar
 import html
+import streamlit.components.v1 as components
 
 
 # ============================================================
@@ -1967,13 +1969,16 @@ media_table = media_table.sort_values(
 )
 
 
-st.markdown(
+import streamlit.components.v1 as components
+
+components.html(
     build_comparison_html(
         media_table,
         "media",
         "performance-table"
     ),
-    unsafe_allow_html=True
+    height=max(300, 110 * len(metric_rows) + 100),
+    scrolling=True
 )
 
 
@@ -2527,13 +2532,16 @@ campaign_table = campaign_table.sort_values(
 # 32. 캠페인 비교표
 # ============================================================
 
-st.markdown(
+import streamlit.components.v1 as components
+
+components.html(
     build_comparison_html(
-        campaign_table,
-        "campaign",
-        "campaign-table"
+        media_table,
+        "media",
+        "performance-table"
     ),
-    unsafe_allow_html=True
+    height=max(300, 110 * len(metric_rows) + 100),
+    scrolling=True
 )
 
 
