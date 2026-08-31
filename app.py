@@ -1594,152 +1594,311 @@ st.header("💡 성과 해석")
 # 26. 코멘트 생성
 # ============================================================
 
-def generate_comments(data):
+def make_performance_comments(result_df):
+    """
+    매체/캠페인별 성과 비교 결과를 바탕으로
+    사람이 읽기 쉬운 성과 코멘트를 생성한다.
+    """
 
     comments = []
 
-    valid = data[
-        data["conversion_current"] > 0
-    ].copy()
+    if result_df is None or result_df.empty:
+        return ["비교할 데이터가 없습니다."]
 
-    if valid.empty:
+    # 숫자형 변환
+    df_comment = result_df.copy()
 
-        return [
-            "현재 기간에 전환이 발생한 매체가 없습니다."
-        ]
-
-    # --------------------------------------------------------
-    # CPA 우수
-    # --------------------------------------------------------
-
-    cpa_valid = valid[
-        valid["CPA_current"].notna()
+    numeric_cols = [
+        "기준 광고비",
+        "비교 광고비",
+        "기준 전환수",
+        "비교 전환수",
+        "기준 CPA",
+        "비교 CPA",
+        "기준 CVR",
+        "비교 CVR",
     ]
 
-    if not cpa_valid.empty:
+    for col in numeric_cols:
+        if col in df_comment.columns:
+            df_comment[col] = pd.to_numeric(
+                df_comment[col],
+                errors="coerce"
+            ).fillna(0)
 
-        best_cpa = cpa_valid.loc[
-            cpa_valid["CPA_current"].idxmin()
-        ]
+    # --------------------------------------------------------
+    # 개별 매체/캠페인 분석
+    # --------------------------------------------------------
 
-        worst_cpa = cpa_valid.loc[
-            cpa_valid["CPA_current"].idxmax()
-        ]
+    for _, row in df_comment.iterrows():
 
-        comments.append(
-            f"✅ **CPA 우수:** "
-            f"{best_cpa['media']}가 "
-            f"{best_cpa['CPA_current']:,.0f}원으로 "
-            f"가장 낮은 CPA를 기록했습니다."
+        target = str(
+            row.get("분석 대상",
+                    row.get("media",
+                            row.get("campaign", "전체")))
         )
 
-        if best_cpa["media"] != worst_cpa["media"]:
+        if target == "nan":
+            target = "전체"
 
-            comments.append(
-                f"⚠️ **CPA 개선 필요:** "
-                f"{worst_cpa['media']}는 "
-                f"{worst_cpa['CPA_current']:,.0f}원으로 "
-                f"선택 매체 중 CPA가 가장 높습니다."
+        spend_current = float(row.get("기준 광고비", 0))
+        spend_previous = float(row.get("비교 광고비", 0))
+
+        conv_current = float(row.get("기준 전환수", 0))
+        conv_previous = float(row.get("비교 전환수", 0))
+
+        cpa_current = float(row.get("기준 CPA", 0))
+        cpa_previous = float(row.get("비교 CPA", 0))
+
+        cvr_current = float(row.get("기준 CVR", 0))
+        cvr_previous = float(row.get("비교 CVR", 0))
+
+        # ----------------------------------------------------
+        # 변화율 계산
+        # ----------------------------------------------------
+
+        spend_change = None
+        conv_change = None
+        cpa_change = None
+        cvr_change = None
+
+        if spend_previous != 0:
+            spend_change = (
+                (spend_current - spend_previous)
+                / spend_previous
+                * 100
             )
 
+        if conv_previous != 0:
+            conv_change = (
+                (conv_current - conv_previous)
+                / conv_previous
+                * 100
+            )
+
+        if cpa_previous != 0:
+            cpa_change = (
+                (cpa_current - cpa_previous)
+                / cpa_previous
+                * 100
+            )
+
+        if cvr_previous != 0:
+            cvr_change = (
+                (cvr_current - cvr_previous)
+                / cvr_previous
+                * 100
+            )
+
+        # ----------------------------------------------------
+        # 코멘트
+        # ----------------------------------------------------
+
+        target_comments = []
+
+        # ① 전환 증가 + CPA 개선
+        if (
+            conv_change is not None
+            and conv_change > 10
+            and cpa_change is not None
+            and cpa_change < -10
+        ):
+            target_comments.append(
+                f"**{target}**: 전환수는 "
+                f"{conv_change:+.1f}% 증가했고 CPA는 "
+                f"{cpa_change:+.1f}% 개선되어 **매우 좋은 성과**입니다."
+            )
+
+        # ② 전환 증가 + CPA 상승
+        elif (
+            conv_change is not None
+            and conv_change > 10
+            and cpa_change is not None
+            and cpa_change > 10
+        ):
+            target_comments.append(
+                f"**{target}**: 전환수는 "
+                f"{conv_change:+.1f}% 증가했지만 CPA도 "
+                f"{cpa_change:+.1f}% 상승했습니다. "
+                f"**볼륨 확대 과정에서 효율이 악화되는지 확인이 필요합니다.**"
+            )
+
+        # ③ 전환 감소 + CPA 개선
+        elif (
+            conv_change is not None
+            and conv_change < -10
+            and cpa_change is not None
+            and cpa_change < -10
+        ):
+            target_comments.append(
+                f"**{target}**: CPA는 "
+                f"{cpa_change:+.1f}% 개선됐지만 전환수는 "
+                f"{conv_change:+.1f}% 감소했습니다. "
+                f"**효율은 좋아졌지만 볼륨이 줄어든 상황입니다.**"
+            )
+
+        # ④ 전환 감소 + CPA 악화
+        elif (
+            conv_change is not None
+            and conv_change < -10
+            and cpa_change is not None
+            and cpa_change > 10
+        ):
+            target_comments.append(
+                f"**{target}**: 전환수는 "
+                f"{conv_change:+.1f}% 감소했고 CPA는 "
+                f"{cpa_change:+.1f}% 상승했습니다. "
+                f"**성과 악화가 뚜렷해 우선 점검이 필요한 대상입니다.**"
+            )
+
+        # ⑤ 전환 증가
+        elif (
+            conv_change is not None
+            and conv_change > 10
+        ):
+            target_comments.append(
+                f"**{target}**: 전환수가 "
+                f"{conv_change:+.1f}% 증가했습니다. "
+                f"**현재 볼륨 확대 효과가 나타나고 있습니다.**"
+            )
+
+        # ⑥ 전환 감소
+        elif (
+            conv_change is not None
+            and conv_change < -10
+        ):
+            target_comments.append(
+                f"**{target}**: 전환수가 "
+                f"{conv_change:+.1f}% 감소했습니다. "
+                f"**예산, 유입량, CVR 변화를 함께 점검하는 것이 좋습니다.**"
+            )
+
+        # ⑦ 데이터 변화가 작은 경우
+        else:
+            target_comments.append(
+                f"**{target}**: 전반적으로 큰 변동은 없습니다. "
+                f"추세를 지속적으로 모니터링하세요."
+            )
+
+        # ----------------------------------------------------
+        # CVR 추가 분석
+        # ----------------------------------------------------
+
+        if (
+            cvr_change is not None
+            and cvr_change > 10
+        ):
+            target_comments.append(
+                f"→ CVR은 **{cvr_change:+.1f}%** 개선되었습니다."
+            )
+
+        elif (
+            cvr_change is not None
+            and cvr_change < -10
+        ):
+            target_comments.append(
+                f"→ CVR은 **{cvr_change:+.1f}%** 하락했습니다. "
+                f"랜딩페이지와 타겟/소재를 점검해보세요."
+            )
+
+        comments.extend(target_comments)
+
     # --------------------------------------------------------
-    # 전환수
+    # 전체 성과 요약
     # --------------------------------------------------------
 
-    best_conversion = valid.loc[
-        valid["conversion_current"].idxmax()
-    ]
+    total_current_spend = df_comment["기준 광고비"].sum()
+    total_previous_spend = df_comment["비교 광고비"].sum()
 
-    comments.append(
-        f"📈 **전환수 최대:** "
-        f"{best_conversion['media']}가 "
-        f"{best_conversion['conversion_current']:,.0f}건으로 "
-        f"가장 많은 전환을 만들었습니다."
+    total_current_conv = df_comment["기준 전환수"].sum()
+    total_previous_conv = df_comment["비교 전환수"].sum()
+
+    if total_previous_spend > 0:
+
+        total_spend_change = (
+            (total_current_spend - total_previous_spend)
+            / total_previous_spend
+            * 100
+        )
+
+    else:
+        total_spend_change = None
+
+    if total_previous_conv > 0:
+
+        total_conv_change = (
+            (total_current_conv - total_previous_conv)
+            / total_previous_conv
+            * 100
+        )
+
+    else:
+        total_conv_change = None
+
+    # 전체 CPA
+    total_current_cpa = (
+        total_current_spend / total_current_conv
+        if total_current_conv > 0
+        else 0
     )
 
-    # --------------------------------------------------------
-    # 전환 증가
-    # --------------------------------------------------------
+    total_previous_cpa = (
+        total_previous_spend / total_previous_conv
+        if total_previous_conv > 0
+        else 0
+    )
 
-    conversion_growth = data[
-        data["conversion_change"].notna()
-    ].copy()
+    if total_previous_cpa > 0:
 
-    if not conversion_growth.empty:
+        total_cpa_change = (
+            (total_current_cpa - total_previous_cpa)
+            / total_previous_cpa
+            * 100
+        )
 
-        growth = conversion_growth.loc[
-            conversion_growth["conversion_change"].idxmax()
-        ]
+    else:
+        total_cpa_change = None
 
-        decline = conversion_growth.loc[
-            conversion_growth["conversion_change"].idxmin()
-        ]
+    comments.insert(
+        0,
+        "### 📊 전체 성과 요약"
+    )
 
-        if growth["conversion_change"] > 0:
+    if total_conv_change is not None:
 
-            comments.append(
-                f"🚀 **전환 증가폭 최대:** "
-                f"{growth['media']}의 전환수가 "
-                f"{growth['conversion_change']:+.1f}% "
-                f"증가했습니다."
-            )
+        comments.append(
+            f"**전체 전환수:** "
+            f"{total_current_conv:,.0f}건 "
+            f"({total_conv_change:+.1f}%)"
+        )
 
-        if decline["conversion_change"] < 0:
+    if total_cpa_change is not None:
 
-            comments.append(
-                f"🔻 **전환 감소폭 최대:** "
-                f"{decline['media']}의 전환수가 "
-                f"{decline['conversion_change']:.1f}% "
-                f"감소했습니다."
-            )
-
-    # --------------------------------------------------------
-    # CPA 개선 / 악화
-    # --------------------------------------------------------
-
-    cpa_change = data[
-        data["CPA_change"].notna()
-    ].copy()
-
-    if not cpa_change.empty:
-
-        best_cpa_change = cpa_change.loc[
-            cpa_change["CPA_change"].idxmin()
-        ]
-
-        worst_cpa_change = cpa_change.loc[
-            cpa_change["CPA_change"].idxmax()
-        ]
-
-        if best_cpa_change["CPA_change"] < 0:
+        if total_cpa_change < 0:
 
             comments.append(
-                f"💰 **CPA 개선:** "
-                f"{best_cpa_change['media']}의 CPA가 "
-                f"{abs(best_cpa_change['CPA_change']):,.1f}% "
-                f"개선되었습니다."
+                f"**전체 CPA:** "
+                f"{total_current_cpa:,.0f}원 "
+                f"({total_cpa_change:+.1f}%) → **효율 개선**"
             )
 
-        if worst_cpa_change["CPA_change"] > 0:
+        else:
 
-    comments.append(
-    f"⚠️ **CPA 악화:** "
-    f"{worst_cpa_change['media']}의 CPA가 "
-    f"{worst_cpa_change['CPA_change']:+,.1f}% "
-    f"상승했습니다."
-)
+            comments.append(
+                f"**전체 CPA:** "
+                f"{total_current_cpa:,.0f}원 "
+                f"({total_cpa_change:+.1f}%) → **효율 악화**"
+            )
+
+    if total_spend_change is not None:
+
+        comments.append(
+            f"**전체 광고비:** "
+            f"{total_current_spend:,.0f}원 "
+            f"({total_spend_change:+.1f}%)"
+        )
+
     return comments
-
-
-comments = generate_comments(
-    comparison
-)
-
-
-for comment in comments:
-
-    st.markdown(comment)
-
 
 # ============================================================
 # 27. 캠페인 드릴다운
