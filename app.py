@@ -476,12 +476,17 @@ def aggregate_performance(
 
     # --------------------------------------------------------
     # CPA
+    #
+    # 광고비 > 0 AND 전환 > 0인 경우만 계산
     # --------------------------------------------------------
 
     result["CPA"] = np.where(
-        result["conversion"] > 0,
+        (result["conversion"] > 0) &
+        (result["spend"] > 0),
+
         result["spend"] /
         result["conversion"],
+
         np.nan
     )
 
@@ -490,10 +495,13 @@ def aggregate_performance(
     # --------------------------------------------------------
 
     result["CVR"] = np.where(
-        result["click"] > 0,
+        (result["click"] > 0) &
+        (result["conversion"] >= 0),
+
         result["conversion"] /
         result["click"] *
         100,
+
         np.nan
     )
 
@@ -536,18 +544,31 @@ def aggregate_by_media(
         )
     )
 
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
     result["CPA"] = np.where(
-        result["conversion"] > 0,
+        (result["conversion"] > 0) &
+        (result["spend"] > 0),
+
         result["spend"] /
         result["conversion"],
+
         np.nan
     )
 
+    # --------------------------------------------------------
+    # CVR
+    # --------------------------------------------------------
+
     result["CVR"] = np.where(
         result["click"] > 0,
+
         result["conversion"] /
         result["click"] *
         100,
+
         np.nan
     )
 
@@ -590,18 +611,31 @@ def aggregate_by_campaign(
         )
     )
 
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
     result["CPA"] = np.where(
-        result["conversion"] > 0,
+        (result["conversion"] > 0) &
+        (result["spend"] > 0),
+
         result["spend"] /
         result["conversion"],
+
         np.nan
     )
 
+    # --------------------------------------------------------
+    # CVR
+    # --------------------------------------------------------
+
     result["CVR"] = np.where(
         result["click"] > 0,
+
         result["conversion"] /
         result["click"] *
         100,
+
         np.nan
     )
 
@@ -628,6 +662,8 @@ def create_comparison(
                 group_col,
                 "spend_current",
                 "spend_previous",
+                "click_current",
+                "click_previous",
                 "conversion_current",
                 "conversion_previous",
                 "CPA_current",
@@ -635,6 +671,7 @@ def create_comparison(
                 "CVR_current",
                 "CVR_previous",
                 "spend_change",
+                "click_change",
                 "conversion_change",
                 "CPA_change",
                 "CVR_change"
@@ -687,14 +724,6 @@ def create_comparison(
             p.get("spend", 0)
         )
 
-        c_conversion = float(
-            c.get("conversion", 0)
-        )
-
-        p_conversion = float(
-            p.get("conversion", 0)
-        )
-
         c_click = float(
             c.get("click", 0)
         )
@@ -703,21 +732,33 @@ def create_comparison(
             p.get("click", 0)
         )
 
+        c_conversion = float(
+            c.get("conversion", 0)
+        )
+
+        p_conversion = float(
+            p.get("conversion", 0)
+        )
+
         # ----------------------------------------------------
         # CPA
         # ----------------------------------------------------
 
         c_cpa = (
-            c_spend /
-            c_conversion
-            if c_conversion > 0
+            c_spend / c_conversion
+            if (
+                c_spend > 0 and
+                c_conversion > 0
+            )
             else np.nan
         )
 
         p_cpa = (
-            p_spend /
-            p_conversion
-            if p_conversion > 0
+            p_spend / p_conversion
+            if (
+                p_spend > 0 and
+                p_conversion > 0
+            )
             else np.nan
         )
 
@@ -729,6 +770,7 @@ def create_comparison(
             c_conversion /
             c_click *
             100
+
             if c_click > 0
             else np.nan
         )
@@ -737,6 +779,7 @@ def create_comparison(
             p_conversion /
             p_click *
             100
+
             if p_click > 0
             else np.nan
         )
@@ -1057,11 +1100,17 @@ previous_df = aggregate_performance(
 # ============================================================
 
 current_media = aggregate_by_media(
-    current_df
+    filtered_df[
+        (filtered_df["date"] >= current_start) &
+        (filtered_df["date"] <= current_end)
+    ]
 )
 
 previous_media = aggregate_by_media(
-    previous_df
+    filtered_df[
+        (filtered_df["date"] >= previous_start) &
+        (filtered_df["date"] <= previous_end)
+    ]
 )
 
 
@@ -1559,9 +1608,9 @@ media_table = media_table.sort_values(
 )
 
 
-# ------------------------------------------------------------
-# 표에 표시할 지표
-# ------------------------------------------------------------
+# ============================================================
+# 20. 표 지표
+# ============================================================
 
 metric_rows = [
 
@@ -1608,7 +1657,7 @@ metric_rows = [
 
 
 # ============================================================
-# 20. HTML 비교표 생성
+# 21. HTML 비교표 생성
 # ============================================================
 
 def build_comparison_html(
@@ -1876,7 +1925,7 @@ def build_comparison_html(
 
 
 # ============================================================
-# 21. 매체 비교표 출력
+# 22. 매체 비교표 출력
 # ============================================================
 
 components.html(
@@ -1891,7 +1940,7 @@ components.html(
 
 
 # ============================================================
-# 22. 성과 해석
+# 23. 성과 해석
 # ============================================================
 
 st.divider()
@@ -1961,7 +2010,12 @@ def make_performance_comments(
         total_current_spend /
         total_current_conv
 
-        if total_current_conv > 0
+        if (
+            total_current_spend > 0
+            and
+            total_current_conv > 0
+        )
+
         else np.nan
     )
 
@@ -1970,7 +2024,12 @@ def make_performance_comments(
         total_previous_spend /
         total_previous_conv
 
-        if total_previous_conv > 0
+        if (
+            total_previous_spend > 0
+            and
+            total_previous_conv > 0
+        )
+
         else np.nan
     )
 
@@ -2102,22 +2161,20 @@ def make_performance_comments(
             f"({total_cvr_change:+.1f}%)"
         )
 
-    comments.append("")
-
     # --------------------------------------------------------
     # CPA 최우수
+    #
+    # 광고비 > 0인 경우만 후보
     # --------------------------------------------------------
 
     valid_cpa = df_comment[
-        df_comment[
-            "CPA_current"
-        ].notna()
+        df_comment["CPA_current"].notna()
         &
-        (
-            df_comment[
-                "conversion_current"
-            ] > 0
-        )
+        (df_comment["CPA_current"] > 0)
+        &
+        (df_comment["spend_current"] > 0)
+        &
+        (df_comment["conversion_current"] > 0)
     ]
 
     if not valid_cpa.empty:
@@ -2215,10 +2272,9 @@ def make_performance_comments(
             )
 
     # --------------------------------------------------------
-    # 개별 분석
+    # 주요 변화
     # --------------------------------------------------------
 
-    comments.append("")
     comments.append(
         "### 🔎 주요 변화"
     )
@@ -2359,13 +2415,15 @@ comments = make_performance_comments(
 
 for comment in comments:
 
-    st.markdown(
-        comment
-    )
+    if comment and comment.strip():
+
+        st.markdown(
+            comment
+        )
 
 
 # ============================================================
-# 23. 캠페인 드릴다운
+# 24. 캠페인 드릴다운
 # ============================================================
 
 st.divider()
@@ -2411,7 +2469,7 @@ campaign_table = campaign_table.sort_values(
 
 
 # ============================================================
-# 24. 캠페인 비교표
+# 25. 캠페인 비교표
 # ============================================================
 
 components.html(
@@ -2426,7 +2484,7 @@ components.html(
 
 
 # ============================================================
-# 25. 캠페인 성과 코멘트
+# 26. 캠페인 성과 코멘트
 # ============================================================
 
 st.subheader(
@@ -2442,13 +2500,15 @@ campaign_comments = make_performance_comments(
 
 for comment in campaign_comments:
 
-    st.markdown(
-        comment
-    )
+    if comment and comment.strip():
+
+        st.markdown(
+            comment
+        )
 
 
 # ============================================================
-# 26. ChatGPT 분석
+# 27. ChatGPT 분석
 # ============================================================
 
 st.divider()
@@ -2464,8 +2524,17 @@ st.caption(
 
 
 # ============================================================
-# 27. AI 데이터 생성
+# 28. AI 데이터 생성
 # ============================================================
+
+def clean_ai_value(value):
+
+    if pd.isna(value):
+
+        return None
+
+    return float(value)
+
 
 def build_ai_data():
 
@@ -2479,132 +2548,78 @@ def build_ai_data():
                     str(row["media"]),
 
                 "기준 광고비":
-                    float(
+                    clean_ai_value(
                         row["spend_current"]
                     ),
 
                 "비교 광고비":
-                    float(
+                    clean_ai_value(
                         row["spend_previous"]
                     ),
 
                 "광고비 변화율":
-                    (
-                        None
-                        if pd.isna(
-                            row["spend_change"]
-                        )
-                        else float(
-                            row["spend_change"]
-                        )
+                    clean_ai_value(
+                        row["spend_change"]
                     ),
 
                 "기준 클릭":
-                    float(
+                    clean_ai_value(
                         row["click_current"]
                     ),
 
                 "비교 클릭":
-                    float(
+                    clean_ai_value(
                         row["click_previous"]
                     ),
 
                 "클릭 변화율":
-                    (
-                        None
-                        if pd.isna(
-                            row["click_change"]
-                        )
-                        else float(
-                            row["click_change"]
-                        )
+                    clean_ai_value(
+                        row["click_change"]
                     ),
 
                 "기준 전환":
-                    float(
+                    clean_ai_value(
                         row["conversion_current"]
                     ),
 
                 "비교 전환":
-                    float(
+                    clean_ai_value(
                         row["conversion_previous"]
                     ),
 
                 "전환 변화율":
-                    (
-                        None
-                        if pd.isna(
-                            row["conversion_change"]
-                        )
-                        else float(
-                            row["conversion_change"]
-                        )
+                    clean_ai_value(
+                        row["conversion_change"]
                     ),
 
                 "기준 CPA":
-                    (
-                        None
-                        if pd.isna(
-                            row["CPA_current"]
-                        )
-                        else float(
-                            row["CPA_current"]
-                        )
+                    clean_ai_value(
+                        row["CPA_current"]
                     ),
 
                 "비교 CPA":
-                    (
-                        None
-                        if pd.isna(
-                            row["CPA_previous"]
-                        )
-                        else float(
-                            row["CPA_previous"]
-                        )
+                    clean_ai_value(
+                        row["CPA_previous"]
                     ),
 
                 "CPA 변화율":
-                    (
-                        None
-                        if pd.isna(
-                            row["CPA_change"]
-                        )
-                        else float(
-                            row["CPA_change"]
-                        )
+                    clean_ai_value(
+                        row["CPA_change"]
                     ),
 
                 "기준 CVR":
-                    (
-                        None
-                        if pd.isna(
-                            row["CVR_current"]
-                        )
-                        else float(
-                            row["CVR_current"]
-                        )
+                    clean_ai_value(
+                        row["CVR_current"]
                     ),
 
                 "비교 CVR":
-                    (
-                        None
-                        if pd.isna(
-                            row["CVR_previous"]
-                        )
-                        else float(
-                            row["CVR_previous"]
-                        )
+                    clean_ai_value(
+                        row["CVR_previous"]
                     ),
 
                 "CVR 변화율":
-                    (
-                        None
-                        if pd.isna(
-                            row["CVR_change"]
-                        )
-                        else float(
-                            row["CVR_change"]
-                        )
+                    clean_ai_value(
+                        row["CVR_change"]
                     )
             }
         )
@@ -2613,7 +2628,7 @@ def build_ai_data():
 
 
 # ============================================================
-# 28. ChatGPT 질문
+# 29. ChatGPT 질문
 # ============================================================
 
 def ask_chatgpt():
@@ -2829,7 +2844,7 @@ CVR이 감소하면서 전환이 감소했는가?
 
 
 # ============================================================
-# 29. ChatGPT 실행 버튼
+# 30. ChatGPT 실행 버튼
 # ============================================================
 
 if st.button(
@@ -2850,7 +2865,7 @@ if st.button(
 
 
 # ============================================================
-# 30. 데이터 정보
+# 31. 데이터 정보
 # ============================================================
 
 st.divider()
