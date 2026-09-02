@@ -39,7 +39,7 @@ st.title("📈 성과 비교 대시보드")
 
 
 # ============================================================
-# 3. Google Sheets 데이터 불러오기
+# 3. 데이터 불러오기
 # ============================================================
 
 @st.cache_data(ttl=300)
@@ -49,10 +49,6 @@ def load_data():
         SHEET_URL,
         encoding="utf-8-sig"
     )
-
-    # --------------------------------------------------------
-    # 컬럼명 정리
-    # --------------------------------------------------------
 
     df.columns = [
         str(col).strip()
@@ -67,20 +63,14 @@ def load_data():
 
         # 정확히 일치
         for candidate in candidates:
-
             for col in df.columns:
-
                 if str(col).strip().lower() == candidate.lower():
-
                     return col
 
         # 부분 일치
         for candidate in candidates:
-
             for col in df.columns:
-
                 if candidate.lower() in str(col).strip().lower():
-
                     return col
 
         return None
@@ -145,23 +135,20 @@ def load_data():
         "CONVERSION": conversion_col
     }
 
-
     missing = [
         key
         for key, value in required.items()
         if value is None
     ]
 
-
     if missing:
-
         raise ValueError(
             f"필수 컬럼을 찾을 수 없습니다: {missing}"
         )
 
 
     # --------------------------------------------------------
-    # 내부 표준 컬럼
+    # 내부 컬럼명 통일
     # --------------------------------------------------------
 
     df = df.rename(
@@ -179,7 +166,7 @@ def load_data():
 
 
     # --------------------------------------------------------
-    # 날짜
+    # 날짜 처리
     # --------------------------------------------------------
 
     df["date"] = pd.to_datetime(
@@ -189,7 +176,7 @@ def load_data():
 
 
     # --------------------------------------------------------
-    # 숫자 컬럼
+    # 숫자 처리
     # --------------------------------------------------------
 
     numeric_cols = [
@@ -206,6 +193,7 @@ def load_data():
             .astype(str)
             .str.replace(",", "", regex=False)
             .str.replace("-", "0", regex=False)
+            .str.strip()
         )
 
         df[col] = pd.to_numeric(
@@ -215,7 +203,7 @@ def load_data():
 
 
     # --------------------------------------------------------
-    # 문자 컬럼
+    # 문자 처리
     # --------------------------------------------------------
 
     for col in [
@@ -286,7 +274,78 @@ if df.empty:
 
 
 # ============================================================
-# 5. 기간 계산
+# 5. 공통 함수
+# ============================================================
+
+def safe_change(current, previous):
+    """
+    변화율 계산
+
+    이전값이 0이면 억지로 %를 만들지 않는다.
+    """
+
+    if pd.isna(current):
+        return np.nan
+
+    if pd.isna(previous):
+        return np.nan
+
+    if previous == 0:
+        return np.nan
+
+    return (
+        (current - previous)
+        / previous
+        * 100
+    )
+
+
+def format_number(value, suffix=""):
+
+    if pd.isna(value):
+        return "-"
+
+    return f"{value:,.0f}{suffix}"
+
+
+def format_percent(value):
+
+    if pd.isna(value):
+        return "-"
+
+    return f"{value:,.2f}%"
+
+
+def format_change(value):
+
+    if pd.isna(value):
+        return "-"
+
+    if value > 0:
+        return f"▲ +{value:,.1f}%"
+
+    if value < 0:
+        return f"▼ {value:,.1f}%"
+
+    return "─ 0.0%"
+
+
+def change_class(value):
+
+    if pd.isna(value):
+        return "neutral"
+
+    if value > 0:
+        return "up"
+
+    if value < 0:
+        return "down"
+
+    return "neutral"
+
+
+# ============================================================
+# 6. 기간 계산
 # ============================================================
 
 def get_periods(
@@ -295,6 +354,7 @@ def get_periods(
 ):
 
     base_date = pd.Timestamp(base_date)
+
 
     # --------------------------------------------------------
     # 전일
@@ -309,9 +369,7 @@ def get_periods(
             base_date - timedelta(days=1)
         )
 
-        previous_end = (
-            base_date - timedelta(days=1)
-        )
+        previous_end = previous_start
 
 
     # --------------------------------------------------------
@@ -402,10 +460,6 @@ def get_periods(
     )
 
 
-# ============================================================
-# 6. 기간 문자열
-# ============================================================
-
 def format_period(
     start_date,
     end_date
@@ -419,81 +473,7 @@ def format_period(
 
 
 # ============================================================
-# 7. 성과 집계
-# ============================================================
-
-def aggregate_performance(
-    data,
-    start_date,
-    end_date
-):
-
-    temp = data[
-        (data["date"] >= pd.Timestamp(start_date)) &
-        (data["date"] <= pd.Timestamp(end_date))
-    ].copy()
-
-
-    if temp.empty:
-
-        return pd.DataFrame(
-            columns=[
-                "type",
-                "media",
-                "campaign",
-                "impress",
-                "click",
-                "spend",
-                "conversion",
-                "CPA",
-                "CVR"
-            ]
-        )
-
-
-    result = (
-        temp
-        .groupby(
-            [
-                "type",
-                "media",
-                "campaign"
-            ],
-            as_index=False
-        )
-        .agg(
-            impress=("impress", "sum"),
-            click=("click", "sum"),
-            spend=("spend", "sum"),
-            conversion=("conversion", "sum")
-        )
-    )
-
-
-    # CPA
-    result["CPA"] = np.where(
-        result["conversion"] > 0,
-        result["spend"] /
-        result["conversion"],
-        np.nan
-    )
-
-
-    # CVR
-    result["CVR"] = np.where(
-        result["click"] > 0,
-        result["conversion"] /
-        result["click"] *
-        100,
-        np.nan
-    )
-
-
-    return result
-
-
-# ============================================================
-# 8. 분석 조건
+# 7. 분석 조건
 # ============================================================
 
 st.subheader("🔎 분석 조건")
@@ -515,13 +495,13 @@ max_date = pd.Timestamp(
 
 
 col1, col2, col3 = st.columns(
-    [1, 1.5, 2]
+    [1, 1.8, 2]
 )
 
 
-# ============================================================
+# ------------------------------------------------------------
 # 기준일
-# ============================================================
+# ------------------------------------------------------------
 
 with col1:
 
@@ -533,9 +513,9 @@ with col1:
     )
 
 
-# ============================================================
+# ------------------------------------------------------------
 # 비교 기간
-# ============================================================
+# ------------------------------------------------------------
 
 with col2:
 
@@ -552,7 +532,7 @@ with col2:
 
 
 # ============================================================
-# 기간 설정
+# 8. 기간 설정
 # ============================================================
 
 if period_type != "지정":
@@ -597,7 +577,6 @@ else:
             key="custom_current_start"
         )
 
-
         custom_current_end = st.date_input(
             "기준 종료일",
             value=base_date,
@@ -621,10 +600,8 @@ else:
     with custom_col2:
 
         st.markdown(
-            f"**기준 기간 일수: "
-            f"{custom_elapsed_days}일**"
+            f"**기준 기간: {custom_elapsed_days}일**"
         )
-
 
         custom_previous_start = st.date_input(
             "비교 시작일",
@@ -637,7 +614,6 @@ else:
             max_value=max_date,
             key="custom_previous_start"
         )
-
 
         custom_previous_end = st.date_input(
             "비교 종료일",
@@ -659,16 +635,38 @@ else:
     ).days + 1
 
 
+    # --------------------------------------------------------
+    # 날짜 역전 체크
+    # --------------------------------------------------------
+
+    if custom_current_start > custom_current_end:
+
+        st.error(
+            "기준 시작일은 기준 종료일보다 빠르거나 같아야 합니다."
+        )
+
+        st.stop()
+
+
+    if custom_previous_start > custom_previous_end:
+
+        st.error(
+            "비교 시작일은 비교 종료일보다 빠르거나 같아야 합니다."
+        )
+
+        st.stop()
+
+
+    # --------------------------------------------------------
+    # 동일 일수 체크
+    # --------------------------------------------------------
+
     if custom_elapsed_days != previous_elapsed_days:
 
         st.error(
-            f"⚠️ 기준 기간은 "
-            f"{custom_elapsed_days}일인데 "
-            f"비교 기간은 "
-            f"{previous_elapsed_days}일입니다."
-            f"\n\n"
-            f"기준 기간과 비교 기간의 일수를 "
-            f"동일하게 설정해주세요."
+            f"⚠️ 기준 기간은 {custom_elapsed_days}일, "
+            f"비교 기간은 {previous_elapsed_days}일입니다. "
+            f"두 기간의 일수를 동일하게 설정해주세요."
         )
 
         st.stop()
@@ -694,7 +692,7 @@ else:
 
 
 # ============================================================
-# 기간 표시
+# 기간 텍스트
 # ============================================================
 
 current_period_text = format_period(
@@ -722,28 +720,19 @@ with col3:
 
 
 # ============================================================
-# 9. TYPE / 매체 / 캠페인 필터
+# 9. 필터
 # ============================================================
 
 type_options = sorted(
-    df["type"]
-    .dropna()
-    .unique()
-    .tolist()
+    df["type"].unique().tolist()
 )
 
 media_options = sorted(
-    df["media"]
-    .dropna()
-    .unique()
-    .tolist()
+    df["media"].unique().tolist()
 )
 
 campaign_options = sorted(
-    df["campaign"]
-    .dropna()
-    .unique()
-    .tolist()
+    df["campaign"].unique().tolist()
 )
 
 
@@ -826,19 +815,90 @@ with button_col3:
 
 
 # ============================================================
-# 11. 필터 데이터
+# 11. 필터 적용
 # ============================================================
 
 filtered_df = df[
-    df["type"].isin(selected_types) &
-    df["media"].isin(selected_media) &
+    df["type"].isin(selected_types)
+    &
+    df["media"].isin(selected_media)
+    &
     df["campaign"].isin(selected_campaigns)
 ].copy()
 
 
 # ============================================================
-# 12. 현재 / 비교 데이터
+# 12. 기간별 집계
 # ============================================================
+
+def aggregate_performance(
+    data,
+    start_date,
+    end_date
+):
+
+    temp = data[
+        (data["date"] >= pd.Timestamp(start_date))
+        &
+        (data["date"] <= pd.Timestamp(end_date))
+    ].copy()
+
+
+    if temp.empty:
+
+        return pd.DataFrame(
+            columns=[
+                "type",
+                "media",
+                "campaign",
+                "impress",
+                "click",
+                "spend",
+                "conversion",
+                "CPA",
+                "CVR"
+            ]
+        )
+
+
+    result = (
+        temp
+        .groupby(
+            [
+                "type",
+                "media",
+                "campaign"
+            ],
+            as_index=False
+        )
+        .agg(
+            impress=("impress", "sum"),
+            click=("click", "sum"),
+            spend=("spend", "sum"),
+            conversion=("conversion", "sum")
+        )
+    )
+
+
+    result["CPA"] = np.where(
+        result["conversion"] > 0,
+        result["spend"] /
+        result["conversion"],
+        np.nan
+    )
+
+
+    result["CVR"] = np.where(
+        result["click"] > 0,
+        result["conversion"] /
+        result["click"] *
+        100,
+        np.nan
+    )
+
+
+    return result
+
 
 current_df = aggregate_performance(
     filtered_df,
@@ -864,9 +924,8 @@ def aggregate_by_media(data):
         return pd.DataFrame(
             columns=[
                 "media",
-                "impress",
-                "click",
                 "spend",
+                "click",
                 "conversion",
                 "CPA",
                 "CVR"
@@ -881,9 +940,8 @@ def aggregate_by_media(data):
             as_index=False
         )
         .agg(
-            impress=("impress", "sum"),
-            click=("click", "sum"),
             spend=("spend", "sum"),
+            click=("click", "sum"),
             conversion=("conversion", "sum")
         )
     )
@@ -919,7 +977,7 @@ previous_media = aggregate_by_media(
 
 
 # ============================================================
-# 14. 비교 데이터
+# 14. 비교 데이터 생성
 # ============================================================
 
 def create_comparison(
@@ -931,6 +989,10 @@ def create_comparison(
     current = current.copy()
     previous = previous.copy()
 
+
+    # --------------------------------------------------------
+    # 빈 데이터 처리
+    # --------------------------------------------------------
 
     if current.empty:
 
@@ -956,12 +1018,17 @@ def create_comparison(
         )
 
 
+    # --------------------------------------------------------
+    # 인덱스
+    # --------------------------------------------------------
+
     current = current.set_index(group_col)
     previous = previous.set_index(group_col)
 
 
     groups = sorted(
-        set(current.index) |
+        set(current.index)
+        |
         set(previous.index)
     )
 
@@ -1057,6 +1124,12 @@ def create_comparison(
             "conversion_previous":
                 p_conversion,
 
+            "click_current":
+                c_click,
+
+            "click_previous":
+                p_click,
+
             "CPA_current":
                 c_cpa,
 
@@ -1074,30 +1147,17 @@ def create_comparison(
     result = pd.DataFrame(rows)
 
 
-    def change_rate(
-        current_value,
-        previous_value
-    ):
-
-        if (
-            pd.isna(previous_value)
-            or previous_value == 0
-            or pd.isna(current_value)
-        ):
-
-            return np.nan
+    if result.empty:
+        return result
 
 
-        return (
-            (current_value - previous_value)
-            / previous_value
-            * 100
-        )
-
+    # --------------------------------------------------------
+    # 변화율
+    # --------------------------------------------------------
 
     result["spend_change"] = result.apply(
         lambda x:
-        change_rate(
+        safe_change(
             x["spend_current"],
             x["spend_previous"]
         ),
@@ -1107,7 +1167,7 @@ def create_comparison(
 
     result["conversion_change"] = result.apply(
         lambda x:
-        change_rate(
+        safe_change(
             x["conversion_current"],
             x["conversion_previous"]
         ),
@@ -1117,7 +1177,7 @@ def create_comparison(
 
     result["CPA_change"] = result.apply(
         lambda x:
-        change_rate(
+        safe_change(
             x["CPA_current"],
             x["CPA_previous"]
         ),
@@ -1127,7 +1187,7 @@ def create_comparison(
 
     result["CVR_change"] = result.apply(
         lambda x:
-        change_rate(
+        safe_change(
             x["CVR_current"],
             x["CVR_previous"]
         ),
@@ -1196,43 +1256,22 @@ total_previous_cvr = (
 )
 
 
-def calc_change(
-    current,
-    previous
-):
-
-    if (
-        pd.isna(previous)
-        or previous == 0
-        or pd.isna(current)
-    ):
-
-        return np.nan
-
-
-    return (
-        (current - previous)
-        / previous
-        * 100
-    )
-
-
-total_spend_change = calc_change(
+total_spend_change = safe_change(
     total_current_spend,
     total_previous_spend
 )
 
-total_conversion_change = calc_change(
+total_conversion_change = safe_change(
     total_current_conversion,
     total_previous_conversion
 )
 
-total_cpa_change = calc_change(
+total_cpa_change = safe_change(
     total_current_cpa,
     total_previous_cpa
 )
 
-total_cvr_change = calc_change(
+total_cvr_change = safe_change(
     total_current_cvr,
     total_previous_cvr
 )
@@ -1245,11 +1284,12 @@ with summary_col1:
 
     st.metric(
         "광고비",
-        f"{total_current_spend:,.0f}원",
-        (
-            f"{total_spend_change:+.1f}%"
-            if pd.notna(total_spend_change)
-            else "-"
+        format_number(
+            total_current_spend,
+            "원"
+        ),
+        format_change(
+            total_spend_change
         )
     )
 
@@ -1258,11 +1298,12 @@ with summary_col2:
 
     st.metric(
         "전환수",
-        f"{total_current_conversion:,.0f}건",
-        (
-            f"{total_conversion_change:+.1f}%"
-            if pd.notna(total_conversion_change)
-            else "-"
+        format_number(
+            total_current_conversion,
+            "건"
+        ),
+        format_change(
+            total_conversion_change
         )
     )
 
@@ -1271,15 +1312,12 @@ with summary_col3:
 
     st.metric(
         "CPA",
-        (
-            f"{total_current_cpa:,.0f}원"
-            if pd.notna(total_current_cpa)
-            else "-"
+        format_number(
+            total_current_cpa,
+            "원"
         ),
-        (
-            f"{total_cpa_change:+.1f}%"
-            if pd.notna(total_cpa_change)
-            else "-"
+        format_change(
+            total_cpa_change
         ),
         delta_color="inverse"
     )
@@ -1289,15 +1327,11 @@ with summary_col4:
 
     st.metric(
         "CVR",
-        (
-            f"{total_current_cvr:.2f}%"
-            if pd.notna(total_current_cvr)
-            else "-"
+        format_percent(
+            total_current_cvr
         ),
-        (
-            f"{total_cvr_change:+.1f}%"
-            if pd.notna(total_cvr_change)
-            else "-"
+        format_change(
+            total_cvr_change
         )
     )
 
@@ -1311,8 +1345,7 @@ st.divider()
 st.header("📈 성과 추이")
 
 st.caption(
-    f"현재 설정한 분석 기간 "
-    f"{current_period_text} 내 데이터만 표시합니다."
+    f"현재 설정한 분석 기간 {current_period_text} 내 데이터만 표시합니다."
 )
 
 
@@ -1324,7 +1357,8 @@ def create_trend_data(
 ):
 
     temp = data[
-        (data["date"] >= pd.Timestamp(start_date)) &
+        (data["date"] >= pd.Timestamp(start_date))
+        &
         (data["date"] <= pd.Timestamp(end_date))
     ].copy()
 
@@ -1438,16 +1472,14 @@ def draw_trend_chart(
         "주차별"
     ]:
 
-        x_values = (
-            trend_df["period"]
-            .dt.strftime("%m/%d")
+        x_values = trend_df["period"].dt.strftime(
+            "%m/%d"
         )
 
     else:
 
-        x_values = (
-            trend_df["period"]
-            .dt.strftime("%Y-%m")
+        x_values = trend_df["period"].dt.strftime(
+            "%Y-%m"
         )
 
 
@@ -1552,17 +1584,12 @@ def draw_trend_chart(
 
 
 with trend_tab1:
-
     draw_trend_chart("일자별")
 
-
 with trend_tab2:
-
     draw_trend_chart("주차별")
 
-
 with trend_tab3:
-
     draw_trend_chart("월별")
 
 
@@ -1581,257 +1608,269 @@ st.caption(
 )
 
 
-chart_df = comparison[
-    comparison["media"].isin(selected_media)
-].copy()
+chart_df = comparison.copy()
+
+if not chart_df.empty:
+
+    chart_df = chart_df[
+        chart_df["media"].isin(
+            selected_media
+        )
+    ].copy()
+
+    chart_df = chart_df.sort_values(
+        "conversion_current",
+        ascending=False
+    )
 
 
-chart_df = chart_df.sort_values(
-    "conversion_current",
-    ascending=False
-)
-
-
-x_labels = chart_df["media"].tolist()
-
-
-# ============================================================
+# ------------------------------------------------------------
 # CPA + 전환수
+# ------------------------------------------------------------
+
+if chart_df.empty:
+
+    st.info(
+        "선택한 조건의 비교 데이터가 없습니다."
+    )
+
+else:
+
+    x_labels = chart_df["media"].tolist()
+
+    fig_cpa = go.Figure()
+
+
+    fig_cpa.add_trace(
+        go.Bar(
+            x=x_labels,
+            y=chart_df["CPA_current"],
+            name="기준 CPA",
+            text=[
+                (
+                    f"{v:,.0f}원"
+                    if pd.notna(v)
+                    else "-"
+                )
+                for v in chart_df["CPA_current"]
+            ],
+            textposition="outside"
+        )
+    )
+
+
+    fig_cpa.add_trace(
+        go.Bar(
+            x=x_labels,
+            y=chart_df["CPA_previous"],
+            name="비교 CPA",
+            text=[
+                (
+                    f"{v:,.0f}원"
+                    if pd.notna(v)
+                    else "-"
+                )
+                for v in chart_df["CPA_previous"]
+            ],
+            textposition="outside"
+        )
+    )
+
+
+    fig_cpa.add_trace(
+        go.Scatter(
+            x=x_labels,
+            y=chart_df["conversion_current"],
+            name="기준 전환수",
+            mode="lines+markers",
+            yaxis="y2"
+        )
+    )
+
+
+    fig_cpa.add_trace(
+        go.Scatter(
+            x=x_labels,
+            y=chart_df["conversion_previous"],
+            name="비교 전환수",
+            mode="lines+markers",
+            yaxis="y2"
+        )
+    )
+
+
+    fig_cpa.update_layout(
+
+        title="CPA + 전환수",
+
+        barmode="group",
+
+        height=390,
+
+        margin=dict(
+            l=50,
+            r=50,
+            t=70,
+            b=100
+        ),
+
+        xaxis=dict(
+            title="매체",
+            type="category",
+            tickangle=-35,
+            automargin=True
+        ),
+
+        yaxis=dict(
+            title="CPA"
+        ),
+
+        yaxis2=dict(
+            title="전환수",
+            overlaying="y",
+            side="right"
+        ),
+
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.30,
+            xanchor="center",
+            x=0.5
+        ),
+
+        hovermode="x unified"
+    )
+
+
+    # --------------------------------------------------------
+    # 광고비 + 전환수
+    # --------------------------------------------------------
+
+    fig_spend = go.Figure()
+
+
+    fig_spend.add_trace(
+        go.Bar(
+            x=x_labels,
+            y=chart_df["spend_current"],
+            name="기준 광고비",
+            text=[
+                f"{v:,.0f}"
+                for v in chart_df["spend_current"]
+            ],
+            textposition="outside"
+        )
+    )
+
+
+    fig_spend.add_trace(
+        go.Bar(
+            x=x_labels,
+            y=chart_df["spend_previous"],
+            name="비교 광고비",
+            text=[
+                f"{v:,.0f}"
+                for v in chart_df["spend_previous"]
+            ],
+            textposition="outside"
+        )
+    )
+
+
+    fig_spend.add_trace(
+        go.Scatter(
+            x=x_labels,
+            y=chart_df["conversion_current"],
+            name="기준 전환수",
+            mode="lines+markers",
+            yaxis="y2"
+        )
+    )
+
+
+    fig_spend.add_trace(
+        go.Scatter(
+            x=x_labels,
+            y=chart_df["conversion_previous"],
+            name="비교 전환수",
+            mode="lines+markers",
+            yaxis="y2"
+        )
+    )
+
+
+    fig_spend.update_layout(
+
+        title="광고비 + 전환수",
+
+        barmode="group",
+
+        height=390,
+
+        margin=dict(
+            l=50,
+            r=50,
+            t=70,
+            b=100
+        ),
+
+        xaxis=dict(
+            title="매체",
+            type="category",
+            tickangle=-35,
+            automargin=True
+        ),
+
+        yaxis=dict(
+            title="광고비"
+        ),
+
+        yaxis2=dict(
+            title="전환수",
+            overlaying="y",
+            side="right"
+        ),
+
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.30,
+            xanchor="center",
+            x=0.5
+        ),
+
+        hovermode="x unified"
+    )
+
+
+    graph_col1, graph_col2 = st.columns(2)
+
+
+    with graph_col1:
+
+        st.plotly_chart(
+            fig_cpa,
+            use_container_width=True,
+            config={
+                "displayModeBar": False
+            }
+        )
+
+
+    with graph_col2:
+
+        st.plotly_chart(
+            fig_spend,
+            use_container_width=True,
+            config={
+                "displayModeBar": False
+            }
+        )
+
+
 # ============================================================
-
-fig_cpa = go.Figure()
-
-
-fig_cpa.add_trace(
-    go.Bar(
-        x=x_labels,
-        y=chart_df["CPA_current"],
-        name="기준 CPA",
-        text=[
-            (
-                f"{v:,.0f}원"
-                if pd.notna(v)
-                else "-"
-            )
-            for v in chart_df["CPA_current"]
-        ],
-        textposition="outside"
-    )
-)
-
-
-fig_cpa.add_trace(
-    go.Bar(
-        x=x_labels,
-        y=chart_df["CPA_previous"],
-        name="비교 CPA",
-        text=[
-            (
-                f"{v:,.0f}원"
-                if pd.notna(v)
-                else "-"
-            )
-            for v in chart_df["CPA_previous"]
-        ],
-        textposition="outside"
-    )
-)
-
-
-fig_cpa.add_trace(
-    go.Scatter(
-        x=x_labels,
-        y=chart_df["conversion_current"],
-        name="기준 전환수",
-        mode="lines+markers",
-        yaxis="y2"
-    )
-)
-
-
-fig_cpa.add_trace(
-    go.Scatter(
-        x=x_labels,
-        y=chart_df["conversion_previous"],
-        name="비교 전환수",
-        mode="lines+markers",
-        yaxis="y2"
-    )
-)
-
-
-fig_cpa.update_layout(
-
-    title="CPA + 전환수",
-
-    barmode="group",
-
-    height=390,
-
-    margin=dict(
-        l=50,
-        r=50,
-        t=70,
-        b=100
-    ),
-
-    xaxis=dict(
-        title="매체",
-        type="category",
-        tickangle=-35,
-        automargin=True
-    ),
-
-    yaxis=dict(
-        title="CPA"
-    ),
-
-    yaxis2=dict(
-        title="전환수",
-        overlaying="y",
-        side="right"
-    ),
-
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=-0.30,
-        xanchor="center",
-        x=0.5
-    ),
-
-    hovermode="x unified"
-)
-
-
-# ============================================================
-# 광고비 + 전환수
-# ============================================================
-
-fig_spend = go.Figure()
-
-
-fig_spend.add_trace(
-    go.Bar(
-        x=x_labels,
-        y=chart_df["spend_current"],
-        name="기준 광고비",
-        text=[
-            f"{v:,.0f}"
-            for v in chart_df["spend_current"]
-        ],
-        textposition="outside"
-    )
-)
-
-
-fig_spend.add_trace(
-    go.Bar(
-        x=x_labels,
-        y=chart_df["spend_previous"],
-        name="비교 광고비",
-        text=[
-            f"{v:,.0f}"
-            for v in chart_df["spend_previous"]
-        ],
-        textposition="outside"
-    )
-)
-
-
-fig_spend.add_trace(
-    go.Scatter(
-        x=x_labels,
-        y=chart_df["conversion_current"],
-        name="기준 전환수",
-        mode="lines+markers",
-        yaxis="y2"
-    )
-)
-
-
-fig_spend.add_trace(
-    go.Scatter(
-        x=x_labels,
-        y=chart_df["conversion_previous"],
-        name="비교 전환수",
-        mode="lines+markers",
-        yaxis="y2"
-    )
-)
-
-
-fig_spend.update_layout(
-
-    title="광고비 + 전환수",
-
-    barmode="group",
-
-    height=390,
-
-    margin=dict(
-        l=50,
-        r=50,
-        t=70,
-        b=100
-    ),
-
-    xaxis=dict(
-        title="매체",
-        type="category",
-        tickangle=-35,
-        automargin=True
-    ),
-
-    yaxis=dict(
-        title="광고비"
-    ),
-
-    yaxis2=dict(
-        title="전환수",
-        overlaying="y",
-        side="right"
-    ),
-
-    legend=dict(
-        orientation="h",
-        yanchor="bottom",
-        y=-0.30,
-        xanchor="center",
-        x=0.5
-    ),
-
-    hovermode="x unified"
-)
-
-
-graph_col1, graph_col2 = st.columns(2)
-
-
-with graph_col1:
-
-    st.plotly_chart(
-        fig_cpa,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-with graph_col2:
-
-    st.plotly_chart(
-        fig_spend,
-        use_container_width=True,
-        config={
-            "displayModeBar": False
-        }
-    )
-
-
-# ============================================================
-# 18. 매체별 상세 비교
+# 18. 매체별 상세 성과 비교
 # ============================================================
 
 st.divider()
@@ -1839,259 +1878,312 @@ st.divider()
 st.header("📋 매체별 상세 성과 비교")
 
 st.caption(
-    "매체를 가로로 배치하고 성과 지표를 세로로 비교합니다."
+    "선택한 TYPE / 매체 기준으로 현재 기간과 비교 기간의 성과를 확인합니다."
 )
 
 
-media_table = comparison[
-    comparison["media"].isin(selected_media)
-].copy()
+media_table = comparison.copy()
 
+if not media_table.empty:
 
-media_table = media_table.sort_values(
-    "conversion_current",
-    ascending=False
-)
+    media_table = media_table[
+        media_table["media"].isin(
+            selected_media
+        )
+    ].copy()
 
-
-metric_rows = [
-
-    (
-        "광고비",
-        "spend_current",
-        "spend_previous",
-        "spend_change",
-        "money"
-    ),
-
-    (
-        "전환수",
+    media_table = media_table.sort_values(
         "conversion_current",
-        "conversion_previous",
-        "conversion_change",
-        "number"
-    ),
-
-    (
-        "CPA",
-        "CPA_current",
-        "CPA_previous",
-        "CPA_change",
-        "cpa"
-    ),
-
-    (
-        "CVR",
-        "CVR_current",
-        "CVR_previous",
-        "CVR_change",
-        "percent"
-    )
-]
-
-
-# ------------------------------------------------------------
-# 표 HTML
-# ------------------------------------------------------------
-
-table_html = """
-<style>
-
-.performance-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-}
-
-.performance-table th,
-.performance-table td {
-    border: 1px solid #dddddd;
-    padding: 10px;
-    text-align: center;
-    white-space: nowrap;
-}
-
-.performance-table th {
-    background-color: #f5f5f5;
-    font-weight: 700;
-}
-
-.performance-table td.metric {
-    text-align: left;
-    font-weight: 700;
-    background-color: #fafafa;
-}
-
-.up {
-    color: #d62728;
-    font-weight: 700;
-}
-
-.down {
-    color: #2468c7;
-    font-weight: 700;
-}
-
-.neutral {
-    color: #666666;
-    font-weight: 700;
-}
-
-</style>
-
-<table class="performance-table">
-
-<tr>
-
-<th>지표</th>
-"""
-
-
-for media in media_table["media"]:
-
-    table_html += (
-        f"<th>{html.escape(str(media))}</th>"
+        ascending=False
     )
 
 
-table_html += "</tr>"
+# ------------------------------------------------------------
+# HTML 테이블 함수
+# ------------------------------------------------------------
+
+def render_comparison_table(
+    table_df,
+    name_col
+):
+
+    if table_df.empty:
+
+        st.info(
+            "선택한 조건에서 표시할 성과 데이터가 없습니다."
+        )
+
+        return
 
 
-for (
-    metric_name,
-    current_col,
-    previous_col,
-    change_col,
-    fmt_type
-) in metric_rows:
+    table_html = """
+    <style>
 
-    table_html += f"""
+    .performance-table {
+
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+
+    }
+
+    .performance-table th,
+    .performance-table td {
+
+        border: 1px solid #dddddd;
+        padding: 10px;
+        text-align: center;
+        white-space: nowrap;
+
+    }
+
+    .performance-table th {
+
+        background-color: #f5f5f5;
+        font-weight: 700;
+
+    }
+
+    .performance-table td.metric {
+
+        text-align: left;
+        font-weight: 700;
+        background-color: #fafafa;
+
+    }
+
+    .up {
+
+        color: #d62728;
+        font-weight: 700;
+
+    }
+
+    .down {
+
+        color: #2468c7;
+        font-weight: 700;
+
+    }
+
+    .neutral {
+
+        color: #666666;
+        font-weight: 700;
+
+    }
+
+    </style>
+
+    <table class="performance-table">
+
     <tr>
-    <td class="metric">
-        {metric_name}
-    </td>
+
+    <th>지표</th>
     """
 
 
-    for _, row in media_table.iterrows():
+    for name in table_df[name_col]:
 
-        current_value = row[current_col]
-        previous_value = row[previous_col]
-        change_value = row[change_col]
-
-
-        if fmt_type in [
-            "money",
-            "cpa"
-        ]:
-
-            current_text = (
-                f"{current_value:,.0f}원"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.0f}원"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        elif fmt_type == "number":
-
-            current_text = (
-                f"{current_value:,.0f}건"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.0f}건"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        else:
-
-            current_text = (
-                f"{current_value:,.2f}%"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.2f}%"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        if pd.isna(change_value):
-
-            change_html = (
-                '<span class="neutral">-</span>'
-            )
-
-        elif change_value > 0:
-
-            change_html = (
-                f'<span class="up">'
-                f'▲ +{change_value:,.1f}%'
-                f'</span>'
-            )
-
-        elif change_value < 0:
-
-            change_html = (
-                f'<span class="down">'
-                f'▼ {change_value:,.1f}%'
-                f'</span>'
-            )
-
-        else:
-
-            change_html = (
-                '<span class="neutral">'
-                '─ 0.0%'
-                '</span>'
-            )
-
-
-        table_html += f"""
-
-        <td>
-
-        <div>
-        기준: <b>{current_text}</b>
-        </div>
-
-        <div style="color:#888;">
-        비교: {previous_text}
-        </div>
-
-        <div style="margin-top:4px;">
-        {change_html}
-        </div>
-
-        </td>
-
-        """
+        table_html += (
+            f"<th>{html.escape(str(name))}</th>"
+        )
 
 
     table_html += "</tr>"
 
 
-table_html += """
+    metric_rows = [
 
-</table>
-"""
+        (
+            "광고비",
+            "spend_current",
+            "spend_previous",
+            "spend_change",
+            "money"
+        ),
+
+        (
+            "전환수",
+            "conversion_current",
+            "conversion_previous",
+            "conversion_change",
+            "number"
+        ),
+
+        (
+            "CPA",
+            "CPA_current",
+            "CPA_previous",
+            "CPA_change",
+            "cpa"
+        ),
+
+        (
+            "CVR",
+            "CVR_current",
+            "CVR_previous",
+            "CVR_change",
+            "percent"
+        )
+
+    ]
 
 
-st.markdown(
-    table_html,
-    unsafe_allow_html=True
+    for (
+        metric_name,
+        current_col,
+        previous_col,
+        change_col,
+        fmt_type
+    ) in metric_rows:
+
+        table_html += f"""
+        <tr>
+        <td class="metric">
+        {metric_name}
+        </td>
+        """
+
+
+        for _, row in table_df.iterrows():
+
+            current_value = row[current_col]
+            previous_value = row[previous_col]
+            change_value = row[change_col]
+
+
+            # ------------------------------------------------
+            # 숫자 포맷
+            # ------------------------------------------------
+
+            if fmt_type in [
+                "money",
+                "cpa"
+            ]:
+
+                current_text = (
+                    f"{current_value:,.0f}원"
+                    if pd.notna(current_value)
+                    else "-"
+                )
+
+                previous_text = (
+                    f"{previous_value:,.0f}원"
+                    if pd.notna(previous_value)
+                    else "-"
+                )
+
+
+            elif fmt_type == "number":
+
+                current_text = (
+                    f"{current_value:,.0f}건"
+                    if pd.notna(current_value)
+                    else "-"
+                )
+
+                previous_text = (
+                    f"{previous_value:,.0f}건"
+                    if pd.notna(previous_value)
+                    else "-"
+                )
+
+
+            else:
+
+                current_text = (
+                    f"{current_value:,.2f}%"
+                    if pd.notna(current_value)
+                    else "-"
+                )
+
+                previous_text = (
+                    f"{previous_value:,.2f}%"
+                    if pd.notna(previous_value)
+                    else "-"
+                )
+
+
+            # ------------------------------------------------
+            # 변화율 표시
+            # ------------------------------------------------
+
+            if pd.isna(change_value):
+
+                if (
+                    pd.notna(previous_value)
+                    and previous_value == 0
+                    and pd.notna(current_value)
+                    and current_value != 0
+                ):
+
+                    change_html = (
+                        '<span class="neutral">'
+                        '비교 0 → 신규'
+                        '</span>'
+                    )
+
+                else:
+
+                    change_html = (
+                        '<span class="neutral">'
+                        '-'
+                        '</span>'
+                    )
+
+            else:
+
+                css_class = change_class(
+                    change_value
+                )
+
+                change_html = (
+                    f'<span class="{css_class}">'
+                    f'{format_change(change_value)}'
+                    f'</span>'
+                )
+
+
+            table_html += f"""
+
+            <td>
+
+            <div>
+            기준: <b>{current_text}</b>
+            </div>
+
+            <div style="color:#888;">
+            비교: {previous_text}
+            </div>
+
+            <div style="margin-top:4px;">
+            {change_html}
+            </div>
+
+            </td>
+
+            """
+
+
+        table_html += "</tr>"
+
+
+    table_html += """
+
+    </table>
+    """
+
+
+    st.markdown(
+        table_html,
+        unsafe_allow_html=True
+    )
+
+
+render_comparison_table(
+    media_table,
+    "media"
 )
 
 
@@ -2099,177 +2191,7 @@ st.markdown(
 # 19. 매체별 성과 코멘트
 # ============================================================
 
-st.divider()
-
-st.header("📝 매체별 성과 코멘트")
-
-st.caption(
-    "광고비·전환수·CPA·CVR 변화를 종합하여 "
-    "매체별 성과 개선 및 악화 원인을 확인합니다."
-)
-
-
-def fmt_pct(value):
-
-    if pd.isna(value):
-
-        return "-"
-
-    return f"{value:+.1f}%"
-
-
-def fmt_money(value):
-
-    if pd.isna(value):
-
-        return "-"
-
-    return f"{value:,.0f}원"
-
-
-def fmt_num(value):
-
-    if pd.isna(value):
-
-        return "-"
-
-    return f"{value:,.0f}건"
-
-
-def media_comment(row):
-
-    media = row["media"]
-
-    spend_change = row["spend_change"]
-    conversion_change = row["conversion_change"]
-    cpa_change = row["CPA_change"]
-    cvr_change = row["CVR_change"]
-
-    current_spend = row["spend_current"]
-    previous_spend = row["spend_previous"]
-
-    current_conversion = row["conversion_current"]
-    previous_conversion = row["conversion_previous"]
-
-    current_cpa = row["CPA_current"]
-    previous_cpa = row["CPA_previous"]
-
-    current_cvr = row["CVR_current"]
-    previous_cvr = row["CVR_previous"]
-
-
-    # --------------------------------------------------------
-    # 핵심 판단
-    # --------------------------------------------------------
-
-    if (
-        pd.notna(conversion_change)
-        and conversion_change > 0
-        and pd.notna(cpa_change)
-        and cpa_change < 0
-    ):
-
-        headline = (
-            "🟢 **볼륨과 효율이 동시에 개선**"
-        )
-
-        conclusion = (
-            "전환수가 증가하는 동시에 CPA가 하락해 "
-            "효율적인 확장이 이루어진 것으로 판단됩니다."
-        )
-
-
-    elif (
-        pd.notna(conversion_change)
-        and conversion_change > 0
-        and pd.notna(cpa_change)
-        and cpa_change > 0
-    ):
-
-        headline = (
-            "🟡 **볼륨은 증가했지만 효율은 악화**"
-        )
-
-        conclusion = (
-            "전환 볼륨은 확대됐지만 CPA가 상승했습니다. "
-            "추가 예산 투입이 효율 악화로 이어지고 있는지 "
-            "확인할 필요가 있습니다."
-        )
-
-
-    elif (
-        pd.notna(conversion_change)
-        and conversion_change < 0
-        and pd.notna(cpa_change)
-        and cpa_change < 0
-    ):
-
-        headline = (
-            "🟡 **효율은 개선됐지만 볼륨은 감소**"
-        )
-
-        conclusion = (
-            "CPA는 개선됐지만 전환수가 감소했습니다. "
-            "효율 중심으로 운영되고 있으나 "
-            "볼륨 확보 측면에서는 추가 점검이 필요합니다."
-        )
-
-
-    elif (
-        pd.notna(conversion_change)
-        and conversion_change < 0
-        and pd.notna(cpa_change)
-        and cpa_change > 0
-    ):
-
-        headline = (
-            "🔴 **볼륨과 효율이 동시에 악화**"
-        )
-
-        conclusion = (
-            "전환수가 감소하면서 CPA까지 상승했습니다. "
-            "매체 내 캠페인·타겟·소재별 성과를 "
-            "우선적으로 점검할 필요가 있습니다."
-        )
-
-
-    else:
-
-        headline = (
-            "📊 **성과 변화 점검 필요**"
-        )
-
-        conclusion = (
-            "전환수와 효율의 변화 방향을 함께 확인하면서 "
-            "세부 캠페인 단위의 원인을 확인하는 것이 좋습니다."
-        )
-
-
-    st.markdown(
-        f"""
-### `{media}`
-
-**{headline}**
-
-- 광고비: **{fmt_money(current_spend)}**
-  / 비교 **{fmt_money(previous_spend)}**
-  / **{fmt_pct(spend_change)}**
-
-- 전환수: **{fmt_num(current_conversion)}**
-  / 비교 **{fmt_num(previous_conversion)}**
-  / **{fmt_pct(conversion_change)}**
-
-- CPA: **{fmt_money(current_cpa)}**
-  / 비교 **{fmt_money(previous_cpa)}**
-  / **{fmt_pct(cpa_change)}**
-
-- CVR: **{current_cvr:.2f}%**
-  / 비교 **{previous_cvr:.2f}%**
-  / **{fmt_pct(cvr_change)}**
-
-> 💡 **해석:** {conclusion}
-"""
-    )
+st.subheader("📝 매체별 성과 코멘트")
 
 
 if media_table.empty:
@@ -2280,9 +2202,263 @@ if media_table.empty:
 
 else:
 
-    for _, media_row in media_table.iterrows():
+    # --------------------------------------------------------
+    # 매체별 개별 분석
+    # --------------------------------------------------------
 
-        media_comment(media_row)
+    for _, row in media_table.iterrows():
+
+        media_name = row["media"]
+
+        current_conversion = row[
+            "conversion_current"
+        ]
+
+        previous_conversion = row[
+            "conversion_previous"
+        ]
+
+        current_cpa = row[
+            "CPA_current"
+        ]
+
+        previous_cpa = row[
+            "CPA_previous"
+        ]
+
+        current_cvr = row[
+            "CVR_current"
+        ]
+
+        previous_cvr = row[
+            "CVR_previous"
+        ]
+
+        spend_change = row[
+            "spend_change"
+        ]
+
+        conversion_change = row[
+            "conversion_change"
+        ]
+
+        cpa_change = row[
+            "CPA_change"
+        ]
+
+        cvr_change = row[
+            "CVR_change"
+        ]
+
+
+        # ----------------------------------------------------
+        # 기본 문장
+        # ----------------------------------------------------
+
+        comments = []
+
+
+        # ----------------------------------------------------
+        # 전환
+        # ----------------------------------------------------
+
+        if pd.isna(conversion_change):
+
+            if (
+                previous_conversion == 0
+                and current_conversion > 0
+            ):
+
+                comments.append(
+                    f"비교 기간에는 전환이 없었으나 "
+                    f"현재 기간에는 {current_conversion:,.0f}건이 발생했습니다."
+                )
+
+        elif conversion_change > 10:
+
+            comments.append(
+                f"전환수는 "
+                f"{conversion_change:+.1f}% 증가하여 "
+                f"볼륨이 개선되었습니다."
+            )
+
+        elif conversion_change < -10:
+
+            comments.append(
+                f"전환수는 "
+                f"{conversion_change:+.1f}% 감소하여 "
+                f"볼륨 감소 여부를 확인할 필요가 있습니다."
+            )
+
+        else:
+
+            comments.append(
+                f"전환수는 "
+                f"{conversion_change:+.1f}%로 "
+                f"큰 변동 없이 유지되었습니다."
+            )
+
+
+        # ----------------------------------------------------
+        # CPA
+        # ----------------------------------------------------
+
+        if pd.notna(cpa_change):
+
+            if cpa_change < -10:
+
+                comments.append(
+                    f"CPA는 "
+                    f"{cpa_change:+.1f}% 개선되어 "
+                    f"전환 효율이 좋아졌습니다."
+                )
+
+            elif cpa_change > 10:
+
+                comments.append(
+                    f"CPA는 "
+                    f"{cpa_change:+.1f}% 상승하여 "
+                    f"효율 악화가 나타났습니다."
+                )
+
+            else:
+
+                comments.append(
+                    f"CPA는 "
+                    f"{cpa_change:+.1f}%로 "
+                    f"큰 변화가 없습니다."
+                )
+
+        elif (
+            previous_cpa != previous_cpa
+            and pd.notna(current_cpa)
+        ):
+
+            comments.append(
+                "비교 기간에 전환이 없어 CPA 비교는 어렵습니다."
+            )
+
+
+        # ----------------------------------------------------
+        # CVR
+        # ----------------------------------------------------
+
+        if pd.notna(cvr_change):
+
+            if cvr_change > 10:
+
+                comments.append(
+                    f"CVR도 "
+                    f"{cvr_change:+.1f}% 개선되어 "
+                    f"유입 이후 전환 효율이 좋아졌습니다."
+                )
+
+            elif cvr_change < -10:
+
+                comments.append(
+                    f"CVR은 "
+                    f"{cvr_change:+.1f}% 하락하여 "
+                    f"랜딩페이지·타겟·소재 측면을 점검할 필요가 있습니다."
+                )
+
+
+        # ----------------------------------------------------
+        # 광고비
+        # ----------------------------------------------------
+
+        if pd.notna(spend_change):
+
+            if spend_change > 20:
+
+                comments.append(
+                    f"광고비는 "
+                    f"{spend_change:+.1f}% 증가했습니다."
+                )
+
+            elif spend_change < -20:
+
+                comments.append(
+                    f"광고비는 "
+                    f"{spend_change:+.1f}% 감소했습니다."
+                )
+
+
+        # ----------------------------------------------------
+        # 종합 판단
+        # ----------------------------------------------------
+
+        if (
+            pd.notna(conversion_change)
+            and pd.notna(cpa_change)
+            and conversion_change > 10
+            and cpa_change < -10
+        ):
+
+            conclusion = (
+                "➡️ **전환 볼륨과 효율이 동시에 개선된 매체로, "
+                "예산 확대 후보로 검토할 수 있습니다.**"
+            )
+
+        elif (
+            pd.notna(conversion_change)
+            and pd.notna(cpa_change)
+            and conversion_change < -10
+            and cpa_change > 10
+        ):
+
+            conclusion = (
+                "➡️ **전환 감소와 CPA 상승이 동시에 나타나고 있어 "
+                "예산·캠페인·소재별 원인 분석이 우선입니다.**"
+            )
+
+        elif (
+            pd.notna(conversion_change)
+            and conversion_change > 10
+            and (
+                pd.isna(cpa_change)
+                or cpa_change <= 10
+            )
+        ):
+
+            conclusion = (
+                "➡️ **볼륨 측면에서 긍정적인 흐름입니다. "
+                "증가한 전환이 실제 유효 DB 품질까지 이어지는지 확인하는 것이 좋습니다.**"
+            )
+
+        elif (
+            pd.notna(cpa_change)
+            and cpa_change < -10
+        ):
+
+            conclusion = (
+                "➡️ **효율이 개선되고 있으므로 "
+                "현재 효율을 유지하면서 추가 볼륨 확보 가능성을 검토할 수 있습니다.**"
+            )
+
+        else:
+
+            conclusion = (
+                "➡️ **현재 성과 흐름을 유지하면서 "
+                "캠페인·소재·타겟 단위의 세부 성과를 추가 확인하는 것이 좋습니다.**"
+            )
+
+
+        st.markdown(
+            f"""
+### 📌 {media_name}
+
+- 현재 전환: **{current_conversion:,.0f}건**
+- 비교 전환: **{previous_conversion:,.0f}건**
+- 현재 CPA: **{format_number(current_cpa, "원")}**
+- 비교 CPA: **{format_number(previous_cpa, "원")}**
+- 현재 CVR: **{format_percent(current_cvr)}**
+- 비교 CVR: **{format_percent(previous_cvr)}**
+
+{" ".join(comments)}
+
+{conclusion}
+"""
+        )
 
 
 # ============================================================
@@ -2294,13 +2470,9 @@ st.divider()
 st.header("🔍 캠페인 드릴다운")
 
 st.caption(
-    "선택한 TYPE / 매체 안의 캠페인을 상세 비교합니다."
+    "선택한 TYPE / 매체 / 캠페인 조건 안에서 캠페인별 상세 성과를 비교합니다."
 )
 
-
-# ============================================================
-# 캠페인 집계
-# ============================================================
 
 def aggregate_by_campaign(data):
 
@@ -2368,238 +2540,35 @@ campaign_comparison = create_comparison(
 )
 
 
-campaign_table = campaign_comparison[
-    campaign_comparison["campaign"].isin(
-        selected_campaigns
+campaign_table = campaign_comparison.copy()
+
+
+if not campaign_table.empty:
+
+    campaign_table = campaign_table[
+        campaign_table["campaign"].isin(
+            selected_campaigns
+        )
+    ].copy()
+
+    campaign_table = campaign_table.sort_values(
+        "conversion_current",
+        ascending=False
     )
-].copy()
 
 
-campaign_table = campaign_table.sort_values(
-    "conversion_current",
-    ascending=False
+render_comparison_table(
+    campaign_table,
+    "campaign"
 )
 
 
 # ============================================================
-# 21. 캠페인 상세표
-# ============================================================
-
-campaign_html = """
-
-<style>
-
-.campaign-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
-
-.campaign-table th,
-.campaign-table td {
-    border: 1px solid #dddddd;
-    padding: 9px;
-    text-align: center;
-    white-space: nowrap;
-}
-
-.campaign-table th {
-    background-color: #f5f5f5;
-}
-
-.campaign-table td.metric {
-    text-align: left;
-    font-weight: 700;
-    background-color: #fafafa;
-}
-
-.up {
-    color: #d62728;
-    font-weight: 700;
-}
-
-.down {
-    color: #2468c7;
-    font-weight: 700;
-}
-
-</style>
-
-<table class="campaign-table">
-
-<tr>
-
-<th>지표</th>
-"""
-
-
-for campaign in campaign_table["campaign"]:
-
-    campaign_html += (
-        f"<th>{html.escape(str(campaign))}</th>"
-    )
-
-
-campaign_html += "</tr>"
-
-
-for (
-    metric_name,
-    current_col,
-    previous_col,
-    change_col,
-    fmt_type
-) in metric_rows:
-
-    campaign_html += f"""
-
-    <tr>
-
-    <td class="metric">
-
-    {metric_name}
-
-    </td>
-
-    """
-
-
-    for _, row in campaign_table.iterrows():
-
-        current_value = row[current_col]
-        previous_value = row[previous_col]
-        change_value = row[change_col]
-
-
-        if fmt_type in [
-            "money",
-            "cpa"
-        ]:
-
-            current_text = (
-                f"{current_value:,.0f}원"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.0f}원"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        elif fmt_type == "number":
-
-            current_text = (
-                f"{current_value:,.0f}건"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.0f}건"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        else:
-
-            current_text = (
-                f"{current_value:,.2f}%"
-                if pd.notna(current_value)
-                else "-"
-            )
-
-            previous_text = (
-                f"{previous_value:,.2f}%"
-                if pd.notna(previous_value)
-                else "-"
-            )
-
-
-        if pd.isna(change_value):
-
-            change_html = "-"
-
-        elif change_value > 0:
-
-            change_html = (
-                f'<span class="up">'
-                f'▲ +{change_value:,.1f}%'
-                f'</span>'
-            )
-
-        elif change_value < 0:
-
-            change_html = (
-                f'<span class="down">'
-                f'▼ {change_value:,.1f}%'
-                f'</span>'
-            )
-
-        else:
-
-            change_html = "─ 0.0%"
-
-
-        campaign_html += f"""
-
-        <td>
-
-        <div>
-        기준: <b>{current_text}</b>
-        </div>
-
-        <div style="color:#888;">
-        비교: {previous_text}
-        </div>
-
-        <div style="margin-top:4px;">
-        {change_html}
-        </div>
-
-        </td>
-
-        """
-
-
-    campaign_html += "</tr>"
-
-
-campaign_html += """
-
-</table>
-
-"""
-
-
-if campaign_table.empty:
-
-    st.info(
-        "선택한 캠페인의 성과 데이터가 없습니다."
-    )
-
-else:
-
-    st.markdown(
-        campaign_html,
-        unsafe_allow_html=True
-    )
-
-
-# ============================================================
-# 22. 캠페인 성과 코멘트
+# 21. 캠페인 성과 코멘트
 # ============================================================
 
 st.subheader("📝 캠페인 성과 코멘트")
 
-st.caption(
-    "캠페인별 전환수·CPA·CVR·광고비 변화를 종합해 "
-    "실제 개선 및 악화 캠페인을 확인합니다."
-)
-
 
 if campaign_table.empty:
 
@@ -2608,48 +2577,55 @@ if campaign_table.empty:
     )
 
 else:
+
+    # --------------------------------------------------------
+    # 현재 전환 캠페인
+    # --------------------------------------------------------
 
     valid_campaigns = campaign_table[
         campaign_table["conversion_current"] > 0
     ].copy()
 
 
-    # --------------------------------------------------------
-    # 1. 핵심 성과 캠페인
-    # --------------------------------------------------------
+    if valid_campaigns.empty:
 
-    st.markdown("### 🏆 주요 개선 캠페인")
-
-
-    # CPA 최우수
-    cpa_valid = valid_campaigns[
-        valid_campaigns["CPA_current"].notna() &
-        (valid_campaigns["CPA_current"] > 0)
-    ]
-
-
-    if not cpa_valid.empty:
-
-        best = cpa_valid.loc[
-            cpa_valid["CPA_current"].idxmin()
-        ]
-
-
-        st.markdown(
-            f"""
-**🏆 CPA 최우수:** `{best['campaign']}`
-
-현재 CPA **{best['CPA_current']:,.0f}원**, "
-전환 **{best['conversion_current']:,.0f}건**입니다. "
-비교 기간 CPA는 "
-**{best['CPA_previous']:,.0f}원**으로 "
-CPA가 **{best['CPA_change']:+,.1f}%** 변화했습니다.
-"""
+        st.info(
+            "현재 기간에 전환이 발생한 캠페인이 없습니다."
         )
 
+    else:
 
-    # 전환 최다
-    if not valid_campaigns.empty:
+        # ====================================================
+        # 1. CPA 최우수
+        # ====================================================
+
+        cpa_valid = valid_campaigns[
+            valid_campaigns["CPA_current"].notna()
+            &
+            (valid_campaigns["CPA_current"] > 0)
+        ].copy()
+
+
+        if not cpa_valid.empty:
+
+            best = cpa_valid.loc[
+                cpa_valid["CPA_current"].idxmin()
+            ]
+
+
+            st.markdown(
+                f"""
+🏆 **CPA 최우수 캠페인:**  
+`{best['campaign']}` — CPA **{best['CPA_current']:,.0f}원** / 전환 **{best['conversion_current']:,.0f}건**
+
+현재 기간에 실제 전환이 발생한 캠페인 중 CPA가 가장 낮습니다.
+"""
+            )
+
+
+        # ====================================================
+        # 2. 전환수 최다
+        # ====================================================
 
         best_conversion = valid_campaigns.loc[
             valid_campaigns[
@@ -2658,311 +2634,374 @@ CPA가 **{best['CPA_change']:+,.1f}%** 변화했습니다.
         ]
 
 
+        best_conversion_cpa = (
+            format_number(
+                best_conversion["CPA_current"],
+                "원"
+            )
+        )
+
+
         st.markdown(
             f"""
-**📈 전환수 최다:** `{best_conversion['campaign']}`
+📈 **전환수 최다 캠페인:**  
+`{best_conversion['campaign']}` — 전환 **{best_conversion['conversion_current']:,.0f}건** / CPA **{best_conversion_cpa}**
 
-현재 전환은 "
-**{best_conversion['conversion_current']:,.0f}건**으로 "
-비교 기간 "
-**{best_conversion['conversion_previous']:,.0f}건** 대비 "
-**{best_conversion['conversion_change']:+,.1f}%** "
-변화했습니다.
-
-현재 CPA는 "
-**{best_conversion['CPA_current']:,.0f}원**입니다.
+단순히 CPA가 낮은 캠페인뿐 아니라 실제 전환 볼륨을 가장 많이 만들어낸 캠페인입니다.
 """
         )
 
 
-    # --------------------------------------------------------
-    # 2. 전환 증가 캠페인
-    # --------------------------------------------------------
+        # ====================================================
+        # 3. 전환 증가폭
+        # ====================================================
 
-    conversion_growth = campaign_table[
-        campaign_table["conversion_change"].notna() &
-        (campaign_table["conversion_change"] > 0) &
-        (campaign_table["conversion_current"] > 0)
-    ].copy()
+        growth = campaign_table[
+            campaign_table["conversion_change"].notna()
+        ].copy()
 
 
-    if not conversion_growth.empty:
+        if not growth.empty:
 
-        conversion_growth = (
-            conversion_growth
-            .sort_values(
-                "conversion_change",
-                ascending=False
-            )
-        )
+            growth_best = growth.loc[
+                growth["conversion_change"].idxmax()
+            ]
 
 
-        st.markdown(
-            "### 🚀 전환 개선 캠페인"
-        )
+            if growth_best["conversion_change"] > 0:
+
+                st.markdown(
+                    f"""
+🚀 **전환 증가폭 최대:**  
+`{growth_best['campaign']}` — 전환 **{growth_best['conversion_change']:+,.1f}%**
+
+비교 기간 대비 전환 볼륨이 가장 크게 증가한 캠페인입니다.
+"""
+                )
 
 
-        for _, row in conversion_growth.head(5).iterrows():
+        # ====================================================
+        # 4. CPA 개선
+        # ====================================================
 
-            cpa_text = (
-                f"{row['CPA_current']:,.0f}원"
-                if pd.notna(row["CPA_current"])
-                else "산출 불가"
-            )
+        cpa_improved = campaign_table[
+            campaign_table["CPA_change"].notna()
+            &
+            (campaign_table["CPA_change"] < 0)
+        ].copy()
+
+
+        if not cpa_improved.empty:
+
+            cpa_best = cpa_improved.loc[
+                cpa_improved["CPA_change"].idxmin()
+            ]
 
 
             st.markdown(
                 f"""
-- **`{row['campaign']}`**
-  - 전환: **{row['conversion_current']:,.0f}건**
-    / 비교 **{row['conversion_previous']:,.0f}건**
-    → **{row['conversion_change']:+,.1f}%**
-  - CPA: **{cpa_text}**
-  - 광고비: **{row['spend_current']:,.0f}원**
-    / **{row['spend_change']:+,.1f}%**
+✅ **CPA 개선폭 최대:**  
+`{cpa_best['campaign']}` — CPA **{cpa_best['CPA_change']:+,.1f}%**
+
+비교 기간보다 전환 확보 비용이 가장 크게 개선된 캠페인입니다.
 """
             )
 
 
-    # --------------------------------------------------------
-    # 3. CPA 개선 캠페인
-    # --------------------------------------------------------
+        # ====================================================
+        # 5. CPA 악화
+        # ====================================================
 
-    cpa_improved = campaign_table[
-        campaign_table["CPA_change"].notna() &
-        (campaign_table["CPA_change"] < 0) &
-        (campaign_table["conversion_current"] > 0)
-    ].copy()
-
-
-    if not cpa_improved.empty:
-
-        cpa_improved = (
-            cpa_improved
-            .sort_values(
-                "CPA_change"
-            )
-        )
+        cpa_worse = campaign_table[
+            campaign_table["CPA_change"].notna()
+            &
+            (campaign_table["CPA_change"] > 0)
+        ].copy()
 
 
-        st.markdown(
-            "### 💰 CPA 개선 캠페인"
-        )
+        if not cpa_worse.empty:
 
-
-        for _, row in cpa_improved.head(5).iterrows():
-
-            conversion_change_text = (
-                f"{row['conversion_change']:+,.1f}%"
-                if pd.notna(row["conversion_change"])
-                else "-"
-            )
+            worst = cpa_worse.loc[
+                cpa_worse["CPA_change"].idxmax()
+            ]
 
 
             st.markdown(
                 f"""
-- **`{row['campaign']}`**
-  - CPA: **{row['CPA_current']:,.0f}원**
-    / 비교 **{row['CPA_previous']:,.0f}원**
-    → **{row['CPA_change']:+,.1f}% 개선**
-  - 전환: **{row['conversion_current']:,.0f}건**
-    → **{conversion_change_text}**
-  - CVR: **{row['CVR_current']:.2f}%**
-    / 비교 **{row['CVR_previous']:.2f}%**
+⚠️ **CPA 악화 주의:**  
+`{worst['campaign']}` — CPA **{worst['CPA_change']:+,.1f}%**
+
+전환 효율이 악화된 캠페인으로, 광고비 증가·클릭 품질·랜딩페이지·타겟 변화 등을 점검할 필요가 있습니다.
 """
             )
 
 
-    # --------------------------------------------------------
-    # 4. CVR 개선 캠페인
-    # --------------------------------------------------------
+        # ====================================================
+        # 6. CVR 개선
+        # ====================================================
 
-    cvr_improved = campaign_table[
-        campaign_table["CVR_change"].notna() &
-        (campaign_table["CVR_change"] > 0) &
-        (campaign_table["conversion_current"] > 0)
-    ].copy()
-
-
-    if not cvr_improved.empty:
-
-        cvr_improved = (
-            cvr_improved
-            .sort_values(
-                "CVR_change",
-                ascending=False
-            )
-        )
+        cvr_improved = campaign_table[
+            campaign_table["CVR_change"].notna()
+            &
+            (campaign_table["CVR_change"] > 0)
+        ].copy()
 
 
-        st.markdown(
-            "### 📈 CVR 개선 캠페인"
-        )
+        if not cvr_improved.empty:
 
+            best_cvr = cvr_improved.loc[
+                cvr_improved["CVR_change"].idxmax()
+            ]
 
-        for _, row in cvr_improved.head(5).iterrows():
 
             st.markdown(
                 f"""
-- **`{row['campaign']}`**
-  - CVR: **{row['CVR_current']:.2f}%**
-    / 비교 **{row['CVR_previous']:.2f}%**
-    → **{row['CVR_change']:+,.1f}%**
-  - 전환: **{row['conversion_current']:,.0f}건**
-  - CPA: **{row['CPA_current']:,.0f}원**
+📈 **CVR 개선폭 최대:**  
+`{best_cvr['campaign']}` — CVR **{best_cvr['CVR_change']:+,.1f}%**
+
+클릭 이후 전환 효율이 가장 크게 개선된 캠페인입니다.
 """
             )
 
 
-    # --------------------------------------------------------
-    # 5. 주의 캠페인
-    # --------------------------------------------------------
+        # ====================================================
+        # 7. 캠페인별 상세 코멘트
+        # ====================================================
 
-    st.markdown("### ⚠️ 개선 필요 캠페인")
-
-
-    # CPA 악화
-    cpa_worsened = campaign_table[
-        campaign_table["CPA_change"].notna() &
-        (campaign_table["CPA_change"] > 0) &
-        (campaign_table["conversion_current"] > 0)
-    ].copy()
+        st.markdown("### 🔎 캠페인별 상세 분석")
 
 
-    if not cpa_worsened.empty:
+        for _, row in campaign_table.iterrows():
 
-        cpa_worsened = (
-            cpa_worsened
-            .sort_values(
-                "CPA_change",
-                ascending=False
-            )
-        )
+            campaign_name = row[
+                "campaign"
+            ]
 
+            current_conversion = row[
+                "conversion_current"
+            ]
 
-        for _, row in cpa_worsened.head(5).iterrows():
+            previous_conversion = row[
+                "conversion_previous"
+            ]
 
-            st.markdown(
-                f"""
-- **🔴 `{row['campaign']}`**
-  - CPA: **{row['CPA_current']:,.0f}원**
-    / 비교 **{row['CPA_previous']:,.0f}원**
-    → **{row['CPA_change']:+,.1f}% 악화**
-  - 전환: **{row['conversion_current']:,.0f}건**
-    / 비교 **{row['conversion_previous']:,.0f}건**
-  - 광고비: **{row['spend_current']:,.0f}원**
-    → **{row['spend_change']:+,.1f}%**
-"""
-            )
+            current_cpa = row[
+                "CPA_current"
+            ]
 
+            previous_cpa = row[
+                "CPA_previous"
+            ]
 
-    # 전환 감소
-    conversion_decreased = campaign_table[
-        campaign_table["conversion_change"].notna() &
-        (campaign_table["conversion_change"] < 0) &
-        (campaign_table["conversion_previous"] > 0)
-    ].copy()
+            current_cvr = row[
+                "CVR_current"
+            ]
 
+            previous_cvr = row[
+                "CVR_previous"
+            ]
 
-    if not conversion_decreased.empty:
+            spend_change = row[
+                "spend_change"
+            ]
 
-        conversion_decreased = (
-            conversion_decreased
-            .sort_values(
+            conversion_change = row[
                 "conversion_change"
-            )
-        )
+            ]
+
+            cpa_change = row[
+                "CPA_change"
+            ]
+
+            cvr_change = row[
+                "CVR_change"
+            ]
 
 
-        for _, row in conversion_decreased.head(5).iterrows():
+            campaign_comments = []
 
-            cpa_text = (
-                f"{row['CPA_current']:,.0f}원"
-                if pd.notna(row["CPA_current"])
-                else "산출 불가"
-            )
+
+            # ------------------------------------------------
+            # 전환 분석
+            # ------------------------------------------------
+
+            if (
+                previous_conversion == 0
+                and current_conversion > 0
+            ):
+
+                campaign_comments.append(
+                    "비교 기간에는 전환이 없었으나 현재 기간에 신규 전환이 발생했습니다."
+                )
+
+            elif (
+                pd.notna(conversion_change)
+                and conversion_change > 10
+            ):
+
+                campaign_comments.append(
+                    f"전환수가 {conversion_change:+.1f}% 증가했습니다."
+                )
+
+            elif (
+                pd.notna(conversion_change)
+                and conversion_change < -10
+            ):
+
+                campaign_comments.append(
+                    f"전환수가 {conversion_change:+.1f}% 감소했습니다."
+                )
+
+
+            # ------------------------------------------------
+            # CPA 분석
+            # ------------------------------------------------
+
+            if pd.notna(cpa_change):
+
+                if cpa_change < -10:
+
+                    campaign_comments.append(
+                        f"CPA는 {cpa_change:+.1f}% 개선되어 효율이 좋아졌습니다."
+                    )
+
+                elif cpa_change > 10:
+
+                    campaign_comments.append(
+                        f"CPA는 {cpa_change:+.1f}% 상승하여 효율이 악화되었습니다."
+                    )
+
+
+            elif (
+                previous_conversion == 0
+                and current_conversion > 0
+            ):
+
+                campaign_comments.append(
+                    "비교 기간에 전환이 없어 CPA 증감률 비교는 어렵습니다."
+                )
+
+
+            # ------------------------------------------------
+            # CVR 분석
+            # ------------------------------------------------
+
+            if pd.notna(cvr_change):
+
+                if cvr_change > 10:
+
+                    campaign_comments.append(
+                        f"CVR은 {cvr_change:+.1f}% 개선되었습니다."
+                    )
+
+                elif cvr_change < -10:
+
+                    campaign_comments.append(
+                        f"CVR은 {cvr_change:+.1f}% 하락했습니다."
+                    )
+
+
+            # ------------------------------------------------
+            # 광고비
+            # ------------------------------------------------
+
+            if pd.notna(spend_change):
+
+                if spend_change > 20:
+
+                    campaign_comments.append(
+                        f"광고비는 {spend_change:+.1f}% 증가했습니다."
+                    )
+
+                elif spend_change < -20:
+
+                    campaign_comments.append(
+                        f"광고비는 {spend_change:+.1f}% 감소했습니다."
+                    )
+
+
+            # ------------------------------------------------
+            # 종합 판단
+            # ------------------------------------------------
+
+            if (
+                pd.notna(conversion_change)
+                and pd.notna(cpa_change)
+                and conversion_change > 10
+                and cpa_change < -10
+            ):
+
+                conclusion = (
+                    "성과 확대와 효율 개선이 동시에 나타나고 있어 "
+                    "예산 확대 또는 유사 소재·타겟 확장을 검토할 수 있습니다."
+                )
+
+            elif (
+                pd.notna(conversion_change)
+                and pd.notna(cpa_change)
+                and conversion_change < -10
+                and cpa_change > 10
+            ):
+
+                conclusion = (
+                    "볼륨과 효율이 동시에 악화된 캠페인으로, "
+                    "예산·타겟·소재·랜딩 단계의 원인 분석이 우선입니다."
+                )
+
+            elif (
+                pd.notna(cpa_change)
+                and cpa_change < -10
+            ):
+
+                conclusion = (
+                    "효율 개선이 확인되므로 현재 성과를 유지하면서 "
+                    "추가 전환 확보 가능성을 확인할 필요가 있습니다."
+                )
+
+            elif (
+                pd.notna(conversion_change)
+                and conversion_change > 10
+            ):
+
+                conclusion = (
+                    "전환 볼륨이 증가하고 있으므로 "
+                    "추가 예산 투입 시 CPA가 유지되는지 확인하는 것이 중요합니다."
+                )
+
+            elif (
+                pd.notna(conversion_change)
+                and conversion_change < -10
+            ):
+
+                conclusion = (
+                    "전환 감소 원인을 확인하기 위해 "
+                    "광고비·클릭·CVR을 캠페인 세부 단위로 추가 분석하는 것이 좋습니다."
+                )
+
+            else:
+
+                conclusion = (
+                    "현재 성과를 유지하면서 추이를 지속적으로 모니터링하는 것이 좋습니다."
+                )
 
 
             st.markdown(
                 f"""
-- **🟠 `{row['campaign']}`**
-  - 전환: **{row['conversion_current']:,.0f}건**
-    / 비교 **{row['conversion_previous']:,.0f}건**
-    → **{row['conversion_change']:+,.1f}%**
-  - CPA: **{cpa_text}**
-  - CVR: **{row['CVR_current']:.2f}%**
-    / 비교 **{row['CVR_previous']:.2f}%**
+**`{campaign_name}`**
+
+현재 전환 **{current_conversion:,.0f}건** → 비교 **{previous_conversion:,.0f}건**  
+현재 CPA **{format_number(current_cpa, "원")}** → 비교 **{format_number(previous_cpa, "원")}**  
+현재 CVR **{format_percent(current_cvr)}** → 비교 **{format_percent(previous_cvr)}**
+
+{" ".join(campaign_comments)}
+
+💡 **판단:** {conclusion}
 """
-            )
-
-
-    # --------------------------------------------------------
-    # 6. 종합 코멘트
-    # --------------------------------------------------------
-
-    st.markdown("### 💡 캠페인 종합 판단")
-
-
-    if not valid_campaigns.empty:
-
-        positive_count = len(
-            campaign_table[
-                (
-                    campaign_table["conversion_change"] > 0
-                ) &
-                (
-                    campaign_table["CPA_change"] < 0
-                )
-            ]
-        )
-
-
-        negative_count = len(
-            campaign_table[
-                (
-                    campaign_table["conversion_change"] < 0
-                ) &
-                (
-                    campaign_table["CPA_change"] > 0
-                )
-            ]
-        )
-
-
-        if positive_count > negative_count:
-
-            st.success(
-                f"현재 분석 대상 캠페인 중 "
-                f"**{positive_count}개 캠페인은 "
-                f"전환 증가와 CPA 개선이 동시에 나타나고 있어 "
-                f"긍정적인 성과 흐름**으로 볼 수 있습니다. "
-                f"다만 전환 증가가 광고비 확대에 의해 발생한 것인지 "
-                f"CVR 개선에 의해 발생한 것인지 추가 확인이 필요합니다."
-            )
-
-
-        elif negative_count > positive_count:
-
-            st.warning(
-                f"현재 분석 대상 캠페인 중 "
-                f"**{negative_count}개 캠페인은 "
-                f"전환 감소와 CPA 상승이 동시에 나타나고 있습니다. "
-                f"예산 배분, 소재, 타겟, 랜딩페이지 등의 "
-                f"세부 원인을 우선적으로 확인하는 것이 좋습니다."
-            )
-
-
-        else:
-
-            st.info(
-                "개선 캠페인과 악화 캠페인이 혼재하고 있습니다. "
-                "전체 평균만 보기보다 매체 → 캠페인 → 소재/타겟 "
-                "순으로 세부 성과를 확인하는 것이 좋습니다."
             )
 
 
 # ============================================================
-# 23. 데이터 정보
+# 22. 데이터 정보
 # ============================================================
 
 st.divider()
@@ -2988,18 +3027,15 @@ with st.expander("📌 데이터 정보"):
     )
 
     st.write(
-        f"기준 기간: "
-        f"{current_period_text}"
+        f"기준 기간: {current_period_text}"
     )
 
     st.write(
-        f"비교 기간: "
-        f"{previous_period_text}"
+        f"비교 기간: {previous_period_text}"
     )
 
     st.write(
-        f"동일 진행일수: "
-        f"{elapsed_days}일"
+        f"동일 진행일수: {elapsed_days}일"
     )
 
     st.write(
@@ -3008,11 +3044,9 @@ with st.expander("📌 데이터 정보"):
     )
 
     st.write(
-        f"선택 매체: "
-        f"{len(selected_media)}개"
+        f"선택 매체: {len(selected_media)}개"
     )
 
     st.write(
-        f"선택 캠페인: "
-        f"{len(selected_campaigns)}개"
+        f"선택 캠페인: {len(selected_campaigns)}개"
     )
