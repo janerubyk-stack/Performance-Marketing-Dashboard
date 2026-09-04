@@ -585,19 +585,7 @@ st.divider()
 st.header("🎯 캠페인 선택")
 
 
-campaign_options = campaign["campaign_label"].sort_values().tolist()
-
-selected_campaigns = st.multiselect(
-    "분석할 캠페인 · 매체",
-    options=campaign_options,
-    default=campaign_options,
-    key="detail_campaign"
-)
-
-campaign_filtered = campaign[
-    campaign["campaign_label"].isin(selected_campaigns)
-].copy()
-
+campaign_filtered = campaign.copy()
 
 # ============================================================
 # 16. 캠페인별 성과
