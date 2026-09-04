@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import requests
+from io import StringIO
 
 
 # ============================================================
@@ -45,7 +47,7 @@ st.caption(
 # 3. Google Sheets 설정
 # ============================================================
 
-SHEET_ID = "1M_NGYvpXgY721bB-V0dgXOj5LmITfKoVTIoIJgmv6gk"
+SHEET_ID = "1M_NGYvpXgY721bV-B0dgXOj5LmITfKoVTIoIJgmv6gk"
 GID = "519342112"
 
 SHEET_URL = (
@@ -61,8 +63,19 @@ SHEET_URL = (
 @st.cache_data(ttl=300)
 def load_data():
 
-import requests
-from io import StringIO
+    response = requests.get(
+        SHEET_URL,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    df = pd.read_csv(
+        StringIO(
+            response.content.decode("utf-8-sig")
+        )
+    )
+
     # --------------------------------------------------------
     # 컬럼명 정리
     # --------------------------------------------------------
@@ -71,6 +84,16 @@ from io import StringIO
         str(col).strip()
         for col in df.columns
     ]
+
+
+    # --------------------------------------------------------
+    # 중복 컬럼명 제거
+    # --------------------------------------------------------
+
+    df = df.loc[
+        :,
+        ~df.columns.duplicated()
+    ].copy()
 
 
     # --------------------------------------------------------
@@ -84,7 +107,10 @@ from io import StringIO
 
             for col in df.columns:
 
-                if str(col).strip().lower() == candidate.lower():
+                if (
+                    str(col).strip().lower()
+                    == candidate.lower()
+                ):
 
                     return col
 
@@ -94,7 +120,10 @@ from io import StringIO
 
             for col in df.columns:
 
-                if candidate.lower() in str(col).strip().lower():
+                if (
+                    candidate.lower()
+                    in str(col).strip().lower()
+                ):
 
                     return col
 
@@ -115,8 +144,8 @@ from io import StringIO
     ])
 
     media_col = find_column([
-        "media",
         "media2",
+        "media",
         "매체"
     ])
 
@@ -127,6 +156,7 @@ from io import StringIO
 
     impress_col = find_column([
         "impress",
+        "imprress",
         "impression",
         "노출"
     ])
@@ -174,7 +204,9 @@ from io import StringIO
     if missing:
 
         raise ValueError(
-            f"필수 컬럼을 찾을 수 없습니다: {missing}"
+            "필수 컬럼을 찾을 수 없습니다: "
+            f"{missing}\n\n"
+            f"현재 컬럼: {df.columns.tolist()}"
         )
 
 
@@ -182,30 +214,18 @@ from io import StringIO
     # 내부 표준 컬럼명
     # --------------------------------------------------------
 
-    rename_map = {
-        date_col: "date",
-        type_col: "type",
-        media_col: "media",
-        campaign_col: "campaign",
-        impress_col: "impress",
-        click_col: "click",
-        spend_col: "spend",
-        conversion_col: "conversion"
-    }
-
     df = df.rename(
-        columns=rename_map
+        columns={
+            date_col: "date",
+            type_col: "type",
+            media_col: "media",
+            campaign_col: "campaign",
+            impress_col: "impress",
+            click_col: "click",
+            spend_col: "spend",
+            conversion_col: "conversion"
+        }
     )
-
-
-    # --------------------------------------------------------
-    # 중복 컬럼명 방어
-    # --------------------------------------------------------
-
-    df = df.loc[
-        :,
-        ~df.columns.duplicated()
-    ].copy()
 
 
     # --------------------------------------------------------
@@ -237,6 +257,7 @@ from io import StringIO
             .astype(str)
             .str.replace(",", "", regex=False)
             .str.replace("-", "0", regex=False)
+            .str.strip()
         )
 
         df[col] = pd.to_numeric(
@@ -249,11 +270,14 @@ from io import StringIO
     # 문자
     # --------------------------------------------------------
 
-    for col in [
+    text_cols = [
         "type",
         "media",
         "campaign"
-    ]:
+    ]
+
+
+    for col in text_cols:
 
         df[col] = (
             df[col]
@@ -298,7 +322,11 @@ try:
 except Exception as e:
 
     st.error(
-        f"Google Sheets 데이터를 불러오지 못했습니다.\n\n{e}"
+        "Google Sheets 데이터를 불러오지 못했습니다."
+    )
+
+    st.code(
+        str(e)
     )
 
     st.stop()
@@ -306,7 +334,9 @@ except Exception as e:
 
 if df.empty:
 
-    st.warning("데이터가 없습니다.")
+    st.warning(
+        "데이터가 없습니다."
+    )
 
     st.stop()
 
@@ -325,7 +355,9 @@ available_dates = sorted(
 
 if not available_dates:
 
-    st.warning("분석 가능한 날짜 데이터가 없습니다.")
+    st.warning(
+        "분석 가능한 날짜 데이터가 없습니다."
+    )
 
     st.stop()
 
@@ -340,12 +372,14 @@ max_date = pd.Timestamp(
 ).date()
 
 
-col1, col2, col3 = st.columns([1, 2, 2])
+col1, col2, col3 = st.columns(
+    [1, 2, 2]
+)
 
 
-# ------------------------------------------------------------
-# 날짜
-# ------------------------------------------------------------
+# ============================================================
+# 6-1. 날짜
+# ============================================================
 
 with col1:
 
@@ -367,14 +401,17 @@ with col1:
     )
 
 
-# ------------------------------------------------------------
-# 카테고리
-# ------------------------------------------------------------
+# ============================================================
+# 6-2. 카테고리
+# ============================================================
 
 with col2:
 
     type_options = sorted(
-        df["type"].unique().tolist()
+        df["type"]
+        .dropna()
+        .unique()
+        .tolist()
     )
 
 
@@ -386,14 +423,17 @@ with col2:
     )
 
 
-# ------------------------------------------------------------
-# 매체
-# ------------------------------------------------------------
+# ============================================================
+# 6-3. 매체
+# ============================================================
 
 with col3:
 
     media_options = sorted(
-        df["media"].unique().tolist()
+        df["media"]
+        .dropna()
+        .unique()
+        .tolist()
     )
 
 
@@ -518,7 +558,11 @@ st.caption(
 campaign = (
     filtered_df
     .groupby(
-        ["type", "media", "campaign"],
+        [
+            "type",
+            "media",
+            "campaign"
+        ],
         as_index=False
     )
     .agg(
@@ -536,14 +580,16 @@ campaign = (
 
 campaign["CPA"] = np.where(
     campaign["conversion"] > 0,
-    campaign["spend"] / campaign["conversion"],
+    campaign["spend"] /
+    campaign["conversion"],
     np.nan
 )
 
 
 campaign["CVR"] = np.where(
     campaign["click"] > 0,
-    campaign["conversion"] / campaign["click"] * 100,
+    campaign["conversion"] /
+    campaign["click"] * 100,
     np.nan
 )
 
@@ -568,14 +614,6 @@ else:
 # ============================================================
 # 14. 그래프용 고유 캠페인명
 # ============================================================
-#
-# 동일한 캠페인이 여러 매체에 존재하는 경우
-# 그래프에서 서로 다른 항목으로 표시
-#
-# 예:
-# 간병인보험 · 네이버
-# 간병인보험 · 카카오
-# ============================================================
 
 campaign["campaign_label"] = (
     campaign["campaign"]
@@ -584,18 +622,19 @@ campaign["campaign_label"] = (
 )
 
 
-campaign = campaign.sort_values(
-    "conversion",
-    ascending=False
-).reset_index(drop=True)
+campaign = (
+    campaign
+    .sort_values(
+        "conversion",
+        ascending=False
+    )
+    .reset_index(drop=True)
+)
 
 
 # ============================================================
-# 15. 캠페인 데이터
+# 15. 전체 캠페인 자동 분석
 # ============================================================
-
-# 캠페인을 따로 선택하지 않고
-# 현재 분석 조건에 해당하는 전체 캠페인을 자동 분석
 
 campaign_filtered = campaign.copy()
 
@@ -617,9 +656,14 @@ if campaign_filtered.empty:
 
 else:
 
-    # --------------------------------------------------------
-    # 전환수 기준 정렬
-    # --------------------------------------------------------
+    # ========================================================
+    # 16-1. 캠페인별 전환수
+    # ========================================================
+
+    st.subheader(
+        "📊 캠페인별 전환수"
+    )
+
 
     conversion_chart_df = (
         campaign_filtered
@@ -631,22 +675,19 @@ else:
     )
 
 
-    # ========================================================
-    # 16-1. 캠페인별 전환수
-    # ========================================================
-
-    st.subheader("📊 캠페인별 전환수")
-
-
     fig_conversion = go.Figure()
 
 
     fig_conversion.add_trace(
         go.Bar(
 
-            y=conversion_chart_df["campaign_label"],
+            y=conversion_chart_df[
+                "campaign_label"
+            ],
 
-            x=conversion_chart_df["conversion"],
+            x=conversion_chart_df[
+                "conversion"
+            ],
 
             orientation="h",
 
@@ -654,7 +695,9 @@ else:
 
             text=[
                 f"{v:,.0f}건"
-                for v in conversion_chart_df["conversion"]
+                for v in conversion_chart_df[
+                    "conversion"
+                ]
             ],
 
             textposition="outside",
@@ -711,7 +754,9 @@ else:
     # 16-2. 캠페인별 CPA
     # ========================================================
 
-    st.subheader("💰 캠페인별 CPA")
+    st.subheader(
+        "💰 캠페인별 CPA"
+    )
 
 
     cpa_chart_df = (
@@ -729,7 +774,8 @@ else:
     if cpa_chart_df.empty:
 
         st.info(
-            "전환이 발생한 캠페인이 없어 CPA 그래프를 표시할 수 없습니다."
+            "전환이 발생한 캠페인이 없어 "
+            "CPA 그래프를 표시할 수 없습니다."
         )
 
     else:
@@ -740,9 +786,13 @@ else:
         fig_cpa.add_trace(
             go.Bar(
 
-                y=cpa_chart_df["campaign_label"],
+                y=cpa_chart_df[
+                    "campaign_label"
+                ],
 
-                x=cpa_chart_df["CPA"],
+                x=cpa_chart_df[
+                    "CPA"
+                ],
 
                 orientation="h",
 
@@ -750,7 +800,9 @@ else:
 
                 text=[
                     f"{v:,.0f}원"
-                    for v in cpa_chart_df["CPA"]
+                    for v in cpa_chart_df[
+                        "CPA"
+                    ]
                 ],
 
                 textposition="outside",
@@ -823,9 +875,9 @@ else:
     top1, top2, top3 = st.columns(3)
 
 
-    # --------------------------------------------------------
-    # CPA 최우수
-    # --------------------------------------------------------
+    # ========================================================
+    # 17-1. CPA 최우수
+    # ========================================================
 
     cpa_valid = campaign_filtered[
         (campaign_filtered["conversion"] > 0) &
@@ -843,7 +895,9 @@ else:
 
         with top1:
 
-            st.markdown("### 🏆 CPA 최우수")
+            st.markdown(
+                "### 🏆 CPA 최우수"
+            )
 
             st.markdown(
                 f"**{best_cpa['campaign']}**"
@@ -866,9 +920,9 @@ else:
             )
 
 
-    # --------------------------------------------------------
-    # 전환수 최다
-    # --------------------------------------------------------
+    # ========================================================
+    # 17-2. 전환수 최다
+    # ========================================================
 
     conversion_valid = campaign_filtered[
         campaign_filtered["conversion"] > 0
@@ -884,7 +938,9 @@ else:
 
         with top2:
 
-            st.markdown("### 📈 전환수 최다")
+            st.markdown(
+                "### 📈 전환수 최다"
+            )
 
             st.markdown(
                 f"**{best_conversion['campaign']}**"
@@ -899,12 +955,21 @@ else:
                 f"{best_conversion['conversion']:,.0f}건"
             )
 
-            st.write(
-                f"CPA: "
-                f"{best_conversion['CPA']:,.0f}원"
-                if pd.notna(best_conversion["CPA"])
-                else "CPA: -"
-            )
+            if pd.notna(
+                best_conversion["CPA"]
+            ):
+
+                st.write(
+                    f"CPA: "
+                    f"{best_conversion['CPA']:,.0f}원"
+                )
+
+            else:
+
+                st.write(
+                    "CPA: -"
+                )
+
 
             st.write(
                 f"전체 전환의 "
@@ -912,9 +977,9 @@ else:
             )
 
 
-    # --------------------------------------------------------
-    # CVR 최우수
-    # --------------------------------------------------------
+    # ========================================================
+    # 17-3. CVR 최우수
+    # ========================================================
 
     cvr_valid = campaign_filtered[
         (campaign_filtered["click"] > 0) &
@@ -931,7 +996,9 @@ else:
 
         with top3:
 
-            st.markdown("### 🎯 CVR 최우수")
+            st.markdown(
+                "### 🎯 CVR 최우수"
+            )
 
             st.markdown(
                 f"**{best_cvr['campaign']}**"
@@ -974,12 +1041,15 @@ if campaign_filtered.empty:
 
 else:
 
-    high_cpa = campaign_filtered[
-        (campaign_filtered["conversion"] > 0) &
-        campaign_filtered["CPA"].notna()
-    ].sort_values(
-        "CPA",
-        ascending=False
+    high_cpa = (
+        campaign_filtered[
+            (campaign_filtered["conversion"] > 0) &
+            campaign_filtered["CPA"].notna()
+        ]
+        .sort_values(
+            "CPA",
+            ascending=False
+        )
     )
 
 
@@ -1042,6 +1112,13 @@ else:
                     format="%.2f%%"
                 )
             }
+        )
+
+
+    else:
+
+        st.info(
+            "전환이 발생한 캠페인이 없습니다."
         )
 
 
