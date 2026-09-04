@@ -100,9 +100,43 @@ def load_data():
     # 컬럼 자동 찾기
     # --------------------------------------------------------
 
+@st.cache_data(ttl=300)
+def load_data():
+
+    response = requests.get(
+        SHEET_URL,
+        timeout=30
+    )
+
+    response.raise_for_status()
+
+    df = pd.read_csv(
+        StringIO(
+            response.content.decode("utf-8-sig")
+        )
+    )
+
+
+    # ========================================================
+    # 컬럼명 정리
+    # ========================================================
+
+    df.columns = [
+        str(col).strip()
+        for col in df.columns
+    ]
+
+
+    # ========================================================
+    # 컬럼 자동 찾기
+    # ========================================================
+
     def find_column(candidates):
 
+        # ----------------------------------------------------
         # 정확히 일치
+        # ----------------------------------------------------
+
         for candidate in candidates:
 
             for col in df.columns:
@@ -115,7 +149,10 @@ def load_data():
                     return col
 
 
+        # ----------------------------------------------------
         # 부분 일치
+        # ----------------------------------------------------
+
         for candidate in candidates:
 
             for col in df.columns:
@@ -136,6 +173,7 @@ def load_data():
         "날짜"
     ])
 
+
     type_col = find_column([
         "type",
         "광고유형",
@@ -143,16 +181,19 @@ def load_data():
         "카테고리"
     ])
 
+
     media_col = find_column([
         "media2",
         "media",
         "매체"
     ])
 
+
     campaign_col = find_column([
         "campaign",
         "캠페인"
     ])
+
 
     impress_col = find_column([
         "impress",
@@ -161,15 +202,18 @@ def load_data():
         "노출"
     ])
 
+
     click_col = find_column([
         "click",
         "클릭"
     ])
 
+
     spend_col = find_column([
         "spend",
         "광고비"
     ])
+
 
     conversion_col = find_column([
         "conversion",
@@ -178,9 +222,9 @@ def load_data():
     ])
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # 필수 컬럼 확인
-    # --------------------------------------------------------
+    # ========================================================
 
     required = {
         "date": date_col,
@@ -204,43 +248,101 @@ def load_data():
     if missing:
 
         raise ValueError(
-            "필수 컬럼을 찾을 수 없습니다: "
-            f"{missing}\n\n"
-            f"현재 컬럼: {df.columns.tolist()}"
+            "필수 컬럼을 찾을 수 없습니다.\n\n"
+            f"누락 컬럼: {missing}\n\n"
+            f"현재 컬럼:\n{df.columns.tolist()}"
         )
 
 
-    # --------------------------------------------------------
-    # 내부 표준 컬럼명
-    # --------------------------------------------------------
+    # ========================================================
+    # 중요:
+    # 원본 컬럼을 직접 rename하지 않고
+    # 필요한 컬럼을 Series 단위로 새 DataFrame에 복사
+    #
+    # → 중복 컬럼명 때문에 DataFrame이 반환되는 문제 방지
+    # ========================================================
 
-    df = df.rename(
-        columns={
-            date_col: "date",
-            type_col: "type",
-            media_col: "media",
-            campaign_col: "campaign",
-            impress_col: "impress",
-            click_col: "click",
-            spend_col: "spend",
-            conversion_col: "conversion"
-        }
+    def get_series(column_name):
+
+        # 같은 이름의 컬럼이 여러 개 있어도
+        # 첫 번째 컬럼만 Series로 가져옴
+
+        positions = [
+            i
+            for i, col in enumerate(df.columns)
+            if str(col).strip() == str(column_name).strip()
+        ]
+
+
+        if not positions:
+
+            raise ValueError(
+                f"컬럼을 찾을 수 없습니다: {column_name}"
+            )
+
+
+        return df.iloc[
+            :,
+            positions[0]
+        ].copy()
+
+
+    clean_df = pd.DataFrame()
+
+
+    clean_df["date"] = get_series(
+        date_col
     )
 
 
-    # --------------------------------------------------------
-    # 날짜
-    # --------------------------------------------------------
+    clean_df["type"] = get_series(
+        type_col
+    )
 
-    df["date"] = pd.to_datetime(
-        df["date"],
+
+    clean_df["media"] = get_series(
+        media_col
+    )
+
+
+    clean_df["campaign"] = get_series(
+        campaign_col
+    )
+
+
+    clean_df["impress"] = get_series(
+        impress_col
+    )
+
+
+    clean_df["click"] = get_series(
+        click_col
+    )
+
+
+    clean_df["spend"] = get_series(
+        spend_col
+    )
+
+
+    clean_df["conversion"] = get_series(
+        conversion_col
+    )
+
+
+    # ========================================================
+    # 날짜
+    # ========================================================
+
+    clean_df["date"] = pd.to_datetime(
+        clean_df["date"],
         errors="coerce"
     )
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # 숫자
-    # --------------------------------------------------------
+    # ========================================================
 
     numeric_cols = [
         "impress",
@@ -252,23 +354,32 @@ def load_data():
 
     for col in numeric_cols:
 
-        df[col] = (
-            df[col]
-            .astype(str)
-            .str.replace(",", "", regex=False)
-            .str.replace("-", "0", regex=False)
+        clean_df[col] = (
+            clean_df[col]
+            .astype("string")
+            .str.replace(
+                ",",
+                "",
+                regex=False
+            )
+            .str.replace(
+                "-",
+                "0",
+                regex=False
+            )
             .str.strip()
         )
 
-        df[col] = pd.to_numeric(
-            df[col],
+
+        clean_df[col] = pd.to_numeric(
+            clean_df[col],
             errors="coerce"
         ).fillna(0)
 
 
-    # --------------------------------------------------------
+    # ========================================================
     # 문자
-    # --------------------------------------------------------
+    # ========================================================
 
     text_cols = [
         "type",
@@ -279,18 +390,63 @@ def load_data():
 
     for col in text_cols:
 
-        df[col] = (
-            df[col]
+        clean_df[col] = (
+            clean_df[col]
             .fillna("미분류")
-            .astype(str)
+            .astype("string")
             .str.strip()
         )
 
-        df.loc[
-            df[col] == "",
+
+        clean_df.loc[
+            clean_df[col].isna() |
+            (clean_df[col] == ""),
             col
         ] = "미분류"
 
+
+    # ========================================================
+    # 날짜 없는 데이터 제거
+    # ========================================================
+
+    clean_df = clean_df.dropna(
+        subset=["date"]
+    ).copy()
+
+
+    # ========================================================
+    # 날짜 정규화
+    # ========================================================
+
+    clean_df["date"] = (
+        clean_df["date"]
+        .dt.normalize()
+    )
+
+
+    # ========================================================
+    # 최종 컬럼 순서
+    # ========================================================
+
+    clean_df = clean_df[
+        [
+            "date",
+            "type",
+            "media",
+            "campaign",
+            "impress",
+            "click",
+            "spend",
+            "conversion"
+        ]
+    ]
+
+
+    return (
+        clean_df
+        .sort_values("date")
+        .reset_index(drop=True)
+    )
 
     # --------------------------------------------------------
     # 날짜 없는 데이터 제거
