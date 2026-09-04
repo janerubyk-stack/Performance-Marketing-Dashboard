@@ -1445,7 +1445,6 @@ for _, row in campaign_detail.iterrows():
             f"CPA와 CVR 중 어느 지표가 성과 변화를 주도했는지를 기준으로 "
             f"후속 최적화 방향을 판단하는 것이 좋습니다."
         )
-
     st.markdown(
         f'<div class="comment-box">{comment}</div>',
         unsafe_allow_html=True
