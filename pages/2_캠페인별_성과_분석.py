@@ -836,6 +836,356 @@ else:
     )
 
 
+
+
+# ============================================================
+# 18. 캠페인 TOP 분석
+# ============================================================
+
+st.divider()
+
+st.header("🏆 캠페인 성과 TOP")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석할 캠페인이 없습니다."
+    )
+
+else:
+
+    top1, top2, top3 = st.columns(3)
+
+
+    # ========================================================
+    # 18-1. CPA 최우수
+    # ========================================================
+
+    cpa_valid = campaign_valid[
+        (campaign_valid["CPA"].notna()) &
+        (campaign_valid["CPA"] > 0)
+    ]
+
+
+    if not cpa_valid.empty:
+
+        best_cpa = cpa_valid.loc[
+            cpa_valid["CPA"].idxmin()
+        ]
+
+
+        with top1:
+
+            st.markdown(
+                "### 🏆 CPA 최우수"
+            )
+
+            st.markdown(
+                f"**{best_cpa['campaign']}**"
+            )
+
+            st.write(
+                f"CPA: {best_cpa['CPA']:,.0f}원"
+            )
+
+            st.write(
+                f"전환: {best_cpa['conversion']:,.0f}건"
+            )
+
+            st.write(
+                f"CVR: {best_cpa['CVR']:.2f}%"
+            )
+
+
+    # ========================================================
+    # 18-2. 전환수 최다
+    # ========================================================
+
+    conversion_valid = campaign_valid[
+        campaign_valid["conversion"] > 0
+    ]
+
+
+    if not conversion_valid.empty:
+
+        best_conversion = conversion_valid.loc[
+            conversion_valid["conversion"].idxmax()
+        ]
+
+
+        with top2:
+
+            st.markdown(
+                "### 📈 전환수 최다"
+            )
+
+            st.markdown(
+                f"**{best_conversion['campaign']}**"
+            )
+
+            st.write(
+                f"전환: "
+                f"{best_conversion['conversion']:,.0f}건"
+            )
+
+            if pd.notna(
+                best_conversion["CPA"]
+            ):
+
+                st.write(
+                    f"CPA: "
+                    f"{best_conversion['CPA']:,.0f}원"
+                )
+
+            else:
+
+                st.write(
+                    "CPA: -"
+                )
+
+
+            st.write(
+                f"전체 전환의 "
+                f"{best_conversion['conversion_share']:.1f}%"
+            )
+
+
+    # ========================================================
+    # 18-3. CVR 최우수
+    # ========================================================
+
+    cvr_valid = campaign_valid[
+        (campaign_valid["click"] > 0) &
+        campaign_valid["CVR"].notna()
+    ]
+
+
+    if not cvr_valid.empty:
+
+        best_cvr = cvr_valid.loc[
+            cvr_valid["CVR"].idxmax()
+        ]
+
+
+        with top3:
+
+            st.markdown(
+                "### 🎯 CVR 최우수"
+            )
+
+            st.markdown(
+                f"**{best_cvr['campaign']}**"
+            )
+
+            st.write(
+                f"CVR: "
+                f"{best_cvr['CVR']:.2f}%"
+            )
+
+            st.write(
+                f"전환: "
+                f"{best_cvr['conversion']:,.0f}건"
+            )
+
+            st.write(
+                f"클릭: "
+                f"{best_cvr['click']:,.0f}회"
+            )
+
+
+# ============================================================
+# 19. 개선 필요 캠페인
+# ============================================================
+
+st.divider()
+
+st.header("⚠️ 개선 필요 캠페인")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석할 캠페인이 없습니다."
+    )
+
+else:
+
+    high_cpa = (
+        campaign_valid[
+            (campaign_valid["conversion"] > 0) &
+            campaign_valid["CPA"].notna() &
+            (campaign_valid["CPA"] > 0)
+        ]
+        .sort_values(
+            "CPA",
+            ascending=False
+        )
+    )
+
+
+    if not high_cpa.empty:
+
+        st.markdown(
+            "#### CPA가 높은 캠페인"
+        )
+
+
+        warning_df = high_cpa[
+            [
+                "campaign",
+                "spend",
+                "conversion",
+                "CPA",
+                "CVR"
+            ]
+        ].head(5).copy()
+
+
+        warning_df = warning_df.rename(
+            columns={
+                "campaign": "캠페인",
+                "spend": "광고비",
+                "conversion": "전환",
+                "CPA": "CPA",
+                "CVR": "CVR"
+            }
+        )
+
+
+        st.dataframe(
+
+            warning_df,
+
+            width="stretch",
+
+            hide_index=True,
+
+            column_config={
+
+                "광고비": st.column_config.NumberColumn(
+                    format="%,d원"
+                ),
+
+                "전환": st.column_config.NumberColumn(
+                    format="%,d건"
+                ),
+
+                "CPA": st.column_config.NumberColumn(
+                    format="%,d원"
+                ),
+
+                "CVR": st.column_config.NumberColumn(
+                    format="%.2f%%"
+                )
+            }
+        )
+
+
+    else:
+
+        st.info(
+            "전환이 발생한 캠페인이 없습니다."
+        )
+
+
+# ============================================================
+# 20. 캠페인 상세 데이터
+# ============================================================
+
+st.divider()
+
+st.header("📋 캠페인 상세 성과")
+
+
+if campaign_valid.empty:
+
+    st.info(
+        "분석 조건에 해당하는 캠페인의 데이터가 없습니다."
+    )
+
+else:
+
+    # ========================================================
+    # CPA 낮은 순으로 정렬
+    # ========================================================
+
+    detail_table = (
+        campaign_valid[
+            [
+                "campaign",
+                "impress",
+                "click",
+                "spend",
+                "conversion",
+                "CPA",
+                "CVR",
+                "conversion_share"
+            ]
+        ]
+        .sort_values(
+            "CPA",
+            ascending=True
+        )
+        .copy()
+    )
+
+
+    detail_table = detail_table.rename(
+        columns={
+            "campaign": "캠페인",
+            "impress": "노출",
+            "click": "클릭",
+            "spend": "광고비",
+            "conversion": "전환",
+            "CPA": "CPA",
+            "CVR": "CVR",
+            "conversion_share": "전체 전환 비중"
+        }
+    )
+
+
+    st.dataframe(
+
+        detail_table,
+
+        width="stretch",
+
+        hide_index=True,
+
+        column_config={
+
+            "노출": st.column_config.NumberColumn(
+                format="%,d"
+            ),
+
+            "클릭": st.column_config.NumberColumn(
+                format="%,d"
+            ),
+
+            "광고비": st.column_config.NumberColumn(
+                format="%,d원"
+            ),
+
+            "전환": st.column_config.NumberColumn(
+                format="%,d건"
+            ),
+
+            "CPA": st.column_config.NumberColumn(
+                format="%,d원"
+            ),
+
+            "CVR": st.column_config.NumberColumn(
+                format="%.2f%%"
+            ),
+
+            "전체 전환 비중": st.column_config.NumberColumn(
+                format="%.1f%%"
+            )
+        }
+    )
+
+
 # ============================================================
 # 18. 성과 추이
 # ============================================================
@@ -1191,354 +1541,6 @@ with trend_tab2:
 with trend_tab3:
 
     draw_trend_chart("월별")
-
-# ============================================================
-# 18. 캠페인 TOP 분석
-# ============================================================
-
-st.divider()
-
-st.header("🏆 캠페인 성과 TOP")
-
-
-if campaign_valid.empty:
-
-    st.info(
-        "분석할 캠페인이 없습니다."
-    )
-
-else:
-
-    top1, top2, top3 = st.columns(3)
-
-
-    # ========================================================
-    # 18-1. CPA 최우수
-    # ========================================================
-
-    cpa_valid = campaign_valid[
-        (campaign_valid["CPA"].notna()) &
-        (campaign_valid["CPA"] > 0)
-    ]
-
-
-    if not cpa_valid.empty:
-
-        best_cpa = cpa_valid.loc[
-            cpa_valid["CPA"].idxmin()
-        ]
-
-
-        with top1:
-
-            st.markdown(
-                "### 🏆 CPA 최우수"
-            )
-
-            st.markdown(
-                f"**{best_cpa['campaign']}**"
-            )
-
-            st.write(
-                f"CPA: {best_cpa['CPA']:,.0f}원"
-            )
-
-            st.write(
-                f"전환: {best_cpa['conversion']:,.0f}건"
-            )
-
-            st.write(
-                f"CVR: {best_cpa['CVR']:.2f}%"
-            )
-
-
-    # ========================================================
-    # 18-2. 전환수 최다
-    # ========================================================
-
-    conversion_valid = campaign_valid[
-        campaign_valid["conversion"] > 0
-    ]
-
-
-    if not conversion_valid.empty:
-
-        best_conversion = conversion_valid.loc[
-            conversion_valid["conversion"].idxmax()
-        ]
-
-
-        with top2:
-
-            st.markdown(
-                "### 📈 전환수 최다"
-            )
-
-            st.markdown(
-                f"**{best_conversion['campaign']}**"
-            )
-
-            st.write(
-                f"전환: "
-                f"{best_conversion['conversion']:,.0f}건"
-            )
-
-            if pd.notna(
-                best_conversion["CPA"]
-            ):
-
-                st.write(
-                    f"CPA: "
-                    f"{best_conversion['CPA']:,.0f}원"
-                )
-
-            else:
-
-                st.write(
-                    "CPA: -"
-                )
-
-
-            st.write(
-                f"전체 전환의 "
-                f"{best_conversion['conversion_share']:.1f}%"
-            )
-
-
-    # ========================================================
-    # 18-3. CVR 최우수
-    # ========================================================
-
-    cvr_valid = campaign_valid[
-        (campaign_valid["click"] > 0) &
-        campaign_valid["CVR"].notna()
-    ]
-
-
-    if not cvr_valid.empty:
-
-        best_cvr = cvr_valid.loc[
-            cvr_valid["CVR"].idxmax()
-        ]
-
-
-        with top3:
-
-            st.markdown(
-                "### 🎯 CVR 최우수"
-            )
-
-            st.markdown(
-                f"**{best_cvr['campaign']}**"
-            )
-
-            st.write(
-                f"CVR: "
-                f"{best_cvr['CVR']:.2f}%"
-            )
-
-            st.write(
-                f"전환: "
-                f"{best_cvr['conversion']:,.0f}건"
-            )
-
-            st.write(
-                f"클릭: "
-                f"{best_cvr['click']:,.0f}회"
-            )
-
-
-# ============================================================
-# 19. 개선 필요 캠페인
-# ============================================================
-
-st.divider()
-
-st.header("⚠️ 개선 필요 캠페인")
-
-
-if campaign_valid.empty:
-
-    st.info(
-        "분석할 캠페인이 없습니다."
-    )
-
-else:
-
-    high_cpa = (
-        campaign_valid[
-            (campaign_valid["conversion"] > 0) &
-            campaign_valid["CPA"].notna() &
-            (campaign_valid["CPA"] > 0)
-        ]
-        .sort_values(
-            "CPA",
-            ascending=False
-        )
-    )
-
-
-    if not high_cpa.empty:
-
-        st.markdown(
-            "#### CPA가 높은 캠페인"
-        )
-
-
-        warning_df = high_cpa[
-            [
-                "campaign",
-                "spend",
-                "conversion",
-                "CPA",
-                "CVR"
-            ]
-        ].head(5).copy()
-
-
-        warning_df = warning_df.rename(
-            columns={
-                "campaign": "캠페인",
-                "spend": "광고비",
-                "conversion": "전환",
-                "CPA": "CPA",
-                "CVR": "CVR"
-            }
-        )
-
-
-        st.dataframe(
-
-            warning_df,
-
-            width="stretch",
-
-            hide_index=True,
-
-            column_config={
-
-                "광고비": st.column_config.NumberColumn(
-                    format="%,d원"
-                ),
-
-                "전환": st.column_config.NumberColumn(
-                    format="%,d건"
-                ),
-
-                "CPA": st.column_config.NumberColumn(
-                    format="%,d원"
-                ),
-
-                "CVR": st.column_config.NumberColumn(
-                    format="%.2f%%"
-                )
-            }
-        )
-
-
-    else:
-
-        st.info(
-            "전환이 발생한 캠페인이 없습니다."
-        )
-
-
-# ============================================================
-# 20. 캠페인 상세 데이터
-# ============================================================
-
-st.divider()
-
-st.header("📋 캠페인 상세 성과")
-
-
-if campaign_valid.empty:
-
-    st.info(
-        "분석 조건에 해당하는 캠페인의 데이터가 없습니다."
-    )
-
-else:
-
-    # ========================================================
-    # CPA 낮은 순으로 정렬
-    # ========================================================
-
-    detail_table = (
-        campaign_valid[
-            [
-                "campaign",
-                "impress",
-                "click",
-                "spend",
-                "conversion",
-                "CPA",
-                "CVR",
-                "conversion_share"
-            ]
-        ]
-        .sort_values(
-            "CPA",
-            ascending=True
-        )
-        .copy()
-    )
-
-
-    detail_table = detail_table.rename(
-        columns={
-            "campaign": "캠페인",
-            "impress": "노출",
-            "click": "클릭",
-            "spend": "광고비",
-            "conversion": "전환",
-            "CPA": "CPA",
-            "CVR": "CVR",
-            "conversion_share": "전체 전환 비중"
-        }
-    )
-
-
-    st.dataframe(
-
-        detail_table,
-
-        width="stretch",
-
-        hide_index=True,
-
-        column_config={
-
-            "노출": st.column_config.NumberColumn(
-                format="%,d"
-            ),
-
-            "클릭": st.column_config.NumberColumn(
-                format="%,d"
-            ),
-
-            "광고비": st.column_config.NumberColumn(
-                format="%,d원"
-            ),
-
-            "전환": st.column_config.NumberColumn(
-                format="%,d건"
-            ),
-
-            "CPA": st.column_config.NumberColumn(
-                format="%,d원"
-            ),
-
-            "CVR": st.column_config.NumberColumn(
-                format="%.2f%%"
-            ),
-
-            "전체 전환 비중": st.column_config.NumberColumn(
-                format="%.1f%%"
-            )
-        }
-    )
-
 
 # ============================================================
 # 21. 데이터 정보
