@@ -1171,4 +1171,4 @@ with st.expander("📌 데이터 정보"):
         f"선택 캠페인: "
         f"{len(selected_campaigns)}개"
     )
-```
+
