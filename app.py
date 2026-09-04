@@ -1443,7 +1443,7 @@ for _, row in campaign_detail.iterrows():
             f"{cvr_part} "
             f"따라서 광고비 변화와 전환 변화가 함께 움직였는지 확인하고, "
             f"CPA와 CVR 중 어느 지표가 성과 변화를 주도했는지를 기준으로 "
-            f후속 최적화 방향을 판단하는 것이 좋습니다."
+            f"후속 최적화 방향을 판단하는 것이 좋습니다."
         )
 
     st.markdown(
