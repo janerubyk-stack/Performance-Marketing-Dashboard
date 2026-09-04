@@ -45,7 +45,7 @@ st.caption(
 # 3. Google Sheets 설정
 # ============================================================
 
-SHEET_ID = "1M_NGYvpXgY721bV-B0dgXOj5LmITfKoVTIoIJgmv6gk"
+SHEET_ID = "1M_NGYvpXgY721bB-V0dgXOj5LmITfKoVTIoIJgmv6gk"
 GID = "519342112"
 
 SHEET_URL = (
@@ -119,6 +119,7 @@ def load_data():
 
     media_col = find_column([
         "media",
+        "media2",
         "매체"
     ])
 
@@ -184,18 +185,30 @@ def load_data():
     # 내부 표준 컬럼명
     # --------------------------------------------------------
 
+    rename_map = {
+        date_col: "date",
+        type_col: "type",
+        media_col: "media",
+        campaign_col: "campaign",
+        impress_col: "impress",
+        click_col: "click",
+        spend_col: "spend",
+        conversion_col: "conversion"
+    }
+
     df = df.rename(
-        columns={
-            date_col: "date",
-            type_col: "type",
-            media_col: "media",
-            campaign_col: "campaign",
-            impress_col: "impress",
-            click_col: "click",
-            spend_col: "spend",
-            conversion_col: "conversion"
-        }
+        columns=rename_map
     )
+
+
+    # --------------------------------------------------------
+    # 중복 컬럼명 방어
+    # --------------------------------------------------------
+
+    df = df.loc[
+        :,
+        ~df.columns.duplicated()
+    ].copy()
 
 
     # --------------------------------------------------------
@@ -311,6 +324,13 @@ st.subheader("🔎 분석 조건")
 available_dates = sorted(
     df["date"].dropna().unique()
 )
+
+
+if not available_dates:
+
+    st.warning("분석 가능한 날짜 데이터가 없습니다.")
+
+    st.stop()
 
 
 min_date = pd.Timestamp(
@@ -549,18 +569,15 @@ else:
 
 
 # ============================================================
-# 14. 그래프용 고유 캠페인명 생성
+# 14. 그래프용 고유 캠페인명
 # ============================================================
 #
-# 중요:
-# 동일한 캠페인이 여러 매체에 존재할 경우
-# 기존에는 X축이 campaign만 사용되어 데이터가 겹칠 수 있음.
+# 동일한 캠페인이 여러 매체에 존재하는 경우
+# 그래프에서 서로 다른 항목으로 표시
 #
 # 예:
-# 간병인보험 / 네이버
-# 간병인보험 / 카카오
-#
-# → 그래프에서는 서로 다른 항목으로 표시
+# 간병인보험 · 네이버
+# 간병인보험 · 카카오
 # ============================================================
 
 campaign["campaign_label"] = (
@@ -577,10 +594,14 @@ campaign = campaign.sort_values(
 
 
 # ============================================================
-# 15. 캠페인 상세 필터
+# 15. 캠페인 데이터
 # ============================================================
 
+# 캠페인을 따로 선택하지 않고
+# 현재 분석 조건에 해당하는 전체 캠페인을 자동 분석
+
 campaign_filtered = campaign.copy()
+
 
 # ============================================================
 # 16. 캠페인별 성과
@@ -670,8 +691,8 @@ else:
         ),
 
         margin=dict(
-            l=180,
-            r=80,
+            l=220,
+            r=100,
             t=70,
             b=60
         ),
@@ -682,7 +703,7 @@ else:
 
     st.plotly_chart(
         fig_conversion,
-        use_container_width=True,
+        width="stretch",
         config={
             "displayModeBar": False
         }
@@ -766,8 +787,8 @@ else:
             ),
 
             margin=dict(
-                l=180,
-                r=100,
+                l=220,
+                r=120,
                 t=70,
                 b=60
             ),
@@ -778,7 +799,7 @@ else:
 
         st.plotly_chart(
             fig_cpa,
-            use_container_width=True,
+            width="stretch",
             config={
                 "displayModeBar": False
             }
@@ -1002,7 +1023,7 @@ else:
 
             warning_df,
 
-            use_container_width=True,
+            width="stretch",
 
             hide_index=True,
 
@@ -1039,7 +1060,7 @@ st.header("📋 캠페인 상세 성과")
 if campaign_filtered.empty:
 
     st.info(
-        "선택한 캠페인의 데이터가 없습니다."
+        "분석 조건에 해당하는 캠페인의 데이터가 없습니다."
     )
 
 else:
@@ -1080,7 +1101,7 @@ else:
 
         detail_table,
 
-        use_container_width=True,
+        width="stretch",
 
         hide_index=True,
 
@@ -1141,7 +1162,6 @@ with st.expander("📌 데이터 정보"):
     )
 
     st.write(
-    st.write(
         f"선택 카테고리: "
         f"{len(selected_type)}개"
     )
@@ -1151,3 +1171,7 @@ with st.expander("📌 데이터 정보"):
         f"{len(selected_media)}개"
     )
 
+    st.write(
+        f"분석 캠페인: "
+        f"{len(campaign_filtered):,}개"
+    )
