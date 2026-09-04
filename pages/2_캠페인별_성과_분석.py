@@ -580,11 +580,6 @@ campaign = campaign.sort_values(
 # 15. 캠페인 상세 필터
 # ============================================================
 
-st.divider()
-
-st.header("🎯 캠페인 선택")
-
-
 campaign_filtered = campaign.copy()
 
 # ============================================================
@@ -1146,6 +1141,7 @@ with st.expander("📌 데이터 정보"):
     )
 
     st.write(
+    st.write(
         f"선택 카테고리: "
         f"{len(selected_type)}개"
     )
@@ -1153,10 +1149,5 @@ with st.expander("📌 데이터 정보"):
     st.write(
         f"선택 매체: "
         f"{len(selected_media)}개"
-    )
-
-    st.write(
-        f"선택 캠페인: "
-        f"{len(selected_campaigns)}개"
     )
 
