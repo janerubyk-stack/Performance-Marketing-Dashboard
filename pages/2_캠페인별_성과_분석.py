@@ -713,20 +713,33 @@ st.caption(
 
 campaign = (
     filtered_df
-    .groupby(
-        [
-            "type",
-            "media",
-            "campaign"
-        ],
-        as_index=False
-    )
-    .agg(
-        impress=("impress", "sum"),
-        click=("click", "sum"),
-        spend=("spend", "sum"),
-        conversion=("conversion", "sum")
-    )
+    .groupby("campaign", as_index=False)
+    .agg({
+        "impress": "sum",
+        "click": "sum",
+        "spend": "sum",
+        "conversion": "sum"
+    })
+)
+
+# CPA / CVR 계산
+campaign["CPA"] = np.where(
+    campaign["conversion"] > 0,
+    campaign["spend"] / campaign["conversion"],
+    np.nan
+)
+
+campaign["CVR"] = np.where(
+    campaign["click"] > 0,
+    campaign["conversion"] / campaign["click"] * 100,
+    0
+)
+
+# 캠페인별 전환수: 0개 제외 + 전환수 많은 순
+campaign_conversion = (
+    campaign[campaign["conversion"] > 0]
+    .sort_values("conversion", ascending=False)
+    .copy()
 )
 
 
@@ -816,199 +829,61 @@ else:
     # 16-1. 캠페인별 전환수
     # ========================================================
 
-    st.subheader(
-        "📊 캠페인별 전환수"
+st.subheader("📊 캠페인별 전환수")
+
+fig_conversion = go.Figure()
+
+fig_conversion.add_trace(
+    go.Bar(
+        x=campaign_conversion["campaign"],
+        y=campaign_conversion["conversion"],
+        text=campaign_conversion["conversion"],
+        textposition="outside"
     )
+)
 
+fig_conversion.update_layout(
+    xaxis_title="캠페인",
+    yaxis_title="전환수",
+    height=450
+)
 
-    conversion_chart_df = (
-        campaign_filtered
-        .sort_values(
-            "conversion",
-            ascending=True
-        )
-        .copy()
-    )
-
-
-    fig_conversion = go.Figure()
-
-
-    fig_conversion.add_trace(
-        go.Bar(
-
-            y=conversion_chart_df[
-                "campaign_label"
-            ],
-
-            x=conversion_chart_df[
-                "conversion"
-            ],
-
-            orientation="h",
-
-            name="전환수",
-
-            text=[
-                f"{v:,.0f}건"
-                for v in conversion_chart_df[
-                    "conversion"
-                ]
-            ],
-
-            textposition="outside",
-
-            hovertemplate=(
-                "<b>%{y}</b><br>"
-                "전환: %{x:,.0f}건"
-                "<extra></extra>"
-            )
-        )
-    )
-
-
-    fig_conversion.update_layout(
-
-        title="캠페인별 전환수",
-
-        height=max(
-            450,
-            len(conversion_chart_df) * 38
-        ),
-
-        xaxis=dict(
-            title="전환수",
-            rangemode="tozero"
-        ),
-
-        yaxis=dict(
-            title="캠페인",
-            automargin=True
-        ),
-
-        margin=dict(
-            l=220,
-            r=100,
-            t=70,
-            b=60
-        ),
-
-        showlegend=False
-    )
-
-
-    st.plotly_chart(
-        fig_conversion,
-        width="stretch",
-        config={
-            "displayModeBar": False
-        }
-    )
-
+st.plotly_chart(
+    fig_conversion,
+    width="stretch"
+)
 
     # ========================================================
     # 16-2. 캠페인별 CPA
     # ========================================================
 
-    st.subheader(
-        "💰 캠페인별 CPA"
+st.subheader("💰 캠페인별 CPA")
+
+fig_cpa = go.Figure()
+
+fig_cpa.add_trace(
+    go.Bar(
+        x=campaign_cpa["campaign"],
+        y=campaign_cpa["CPA"],
+        text=campaign_cpa["CPA"].round(0).astype(int),
+        texttemplate="%{text:,}원",
+        textposition="outside"
     )
+)
 
-
-    cpa_chart_df = (
-        campaign_filtered[
-            campaign_filtered["CPA"].notna()
-        ]
-        .sort_values(
-            "CPA",
-            ascending=True
-        )
-        .copy()
+fig_cpa.update_layout(
+    xaxis_title="캠페인",
+    yaxis_title="CPA",
+    height=450,
+    yaxis=dict(
+        tickformat=","
     )
+)
 
-
-    if cpa_chart_df.empty:
-
-        st.info(
-            "전환이 발생한 캠페인이 없어 "
-            "CPA 그래프를 표시할 수 없습니다."
-        )
-
-    else:
-
-        fig_cpa = go.Figure()
-
-
-        fig_cpa.add_trace(
-            go.Bar(
-
-                y=cpa_chart_df[
-                    "campaign_label"
-                ],
-
-                x=cpa_chart_df[
-                    "CPA"
-                ],
-
-                orientation="h",
-
-                name="CPA",
-
-                text=[
-                    f"{v:,.0f}원"
-                    for v in cpa_chart_df[
-                        "CPA"
-                    ]
-                ],
-
-                textposition="outside",
-
-                hovertemplate=(
-                    "<b>%{y}</b><br>"
-                    "CPA: %{x:,.0f}원"
-                    "<extra></extra>"
-                )
-            )
-        )
-
-
-        fig_cpa.update_layout(
-
-            title="캠페인별 CPA",
-
-            height=max(
-                450,
-                len(cpa_chart_df) * 38
-            ),
-
-            xaxis=dict(
-                title="CPA",
-                rangemode="tozero"
-            ),
-
-            yaxis=dict(
-                title="캠페인",
-                automargin=True
-            ),
-
-            margin=dict(
-                l=220,
-                r=120,
-                t=70,
-                b=60
-            ),
-
-            showlegend=False
-        )
-
-
-        st.plotly_chart(
-            fig_cpa,
-            width="stretch",
-            config={
-                "displayModeBar": False
-            }
-        )
+st.plotly_chart(
+    fig_cpa,
+    width="stretch"
+)
 
 
 # ============================================================
