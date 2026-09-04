@@ -837,6 +837,362 @@ else:
 
 
 # ============================================================
+# 18. 성과 추이
+# ============================================================
+
+st.divider()
+
+st.header("📈 성과 추이")
+
+st.caption(
+    "현재 설정한 분석 기간 내 캠페인 전체 성과 추이를 확인합니다."
+)
+
+
+# ============================================================
+# 18-1. 성과 추이 데이터 생성
+# ============================================================
+
+def create_trend_data(
+    data,
+    start_date,
+    end_date,
+    trend_type
+):
+
+    temp = data[
+        (data["date"] >= pd.Timestamp(start_date))
+        &
+        (data["date"] <= pd.Timestamp(end_date))
+    ].copy()
+
+
+    if temp.empty:
+
+        return pd.DataFrame(
+            columns=[
+                "period",
+                "spend",
+                "click",
+                "conversion",
+                "CPA",
+                "CVR"
+            ]
+        )
+
+
+    # --------------------------------------------------------
+    # 일자별
+    # --------------------------------------------------------
+
+    if trend_type == "일자별":
+
+        temp["period"] = temp["date"]
+
+
+    # --------------------------------------------------------
+    # 주차별
+    # --------------------------------------------------------
+
+    elif trend_type == "주차별":
+
+        temp["period"] = (
+            temp["date"]
+            -
+            pd.to_timedelta(
+                temp["date"].dt.weekday,
+                unit="D"
+            )
+        )
+
+
+    # --------------------------------------------------------
+    # 월별
+    # --------------------------------------------------------
+
+    else:
+
+        temp["period"] = (
+            temp["date"]
+            .dt.to_period("M")
+            .dt.to_timestamp()
+        )
+
+
+    # --------------------------------------------------------
+    # 기간별 집계
+    # --------------------------------------------------------
+
+    result = (
+        temp
+        .groupby(
+            "period",
+            as_index=False
+        )
+        .agg(
+            spend=("spend", "sum"),
+            click=("click", "sum"),
+            conversion=("conversion", "sum")
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
+    result["CPA"] = np.where(
+        result["conversion"] > 0,
+        result["spend"] /
+        result["conversion"],
+        np.nan
+    )
+
+
+    # --------------------------------------------------------
+    # CVR
+    # --------------------------------------------------------
+
+    result["CVR"] = np.where(
+        result["click"] > 0,
+        result["conversion"] /
+        result["click"] *
+        100,
+        np.nan
+    )
+
+
+    return result.sort_values(
+        "period"
+    )
+
+
+# ============================================================
+# 18-2. 캠페인 선택
+# ============================================================
+
+trend_campaign_options = sorted(
+    filtered_df["campaign"]
+    .dropna()
+    .unique()
+    .tolist()
+)
+
+
+selected_trend_campaigns = st.multiselect(
+    "성과 추이를 볼 캠페인",
+    options=trend_campaign_options,
+    default=trend_campaign_options,
+    key="trend_campaign_filter"
+)
+
+
+trend_filtered_df = filtered_df[
+    filtered_df["campaign"].isin(
+        selected_trend_campaigns
+    )
+].copy()
+
+
+# ============================================================
+# 18-3. 추이 그래프
+# ============================================================
+
+trend_tab1, trend_tab2, trend_tab3 = st.tabs(
+    [
+        "📅 일자별",
+        "📆 주차별",
+        "🗓️ 월별"
+    ]
+)
+
+
+def draw_trend_chart(
+    trend_type
+):
+
+    trend_df = create_trend_data(
+        trend_filtered_df,
+        analysis_start,
+        analysis_end,
+        trend_type
+    )
+
+
+    if trend_df.empty:
+
+        st.info(
+            "선택한 조건에 해당하는 성과 데이터가 없습니다."
+        )
+
+        return
+
+
+    # --------------------------------------------------------
+    # X축
+    # --------------------------------------------------------
+
+    if trend_type in [
+        "일자별",
+        "주차별"
+    ]:
+
+        x_values = (
+            trend_df["period"]
+            .dt.strftime("%m/%d")
+        )
+
+    else:
+
+        x_values = (
+            trend_df["period"]
+            .dt.strftime("%Y-%m")
+        )
+
+
+    # ========================================================
+    # 그래프
+    # ========================================================
+
+    fig = go.Figure()
+
+
+    # --------------------------------------------------------
+    # CPA
+    # --------------------------------------------------------
+
+    fig.add_trace(
+        go.Bar(
+            x=x_values,
+            y=trend_df["CPA"],
+            name="CPA",
+            text=[
+                (
+                    f"{v:,.0f}원"
+                    if pd.notna(v)
+                    else "-"
+                )
+                for v in trend_df["CPA"]
+            ],
+            textposition="outside",
+            hovertemplate=(
+                "%{x}<br>"
+                "CPA: %{y:,.0f}원"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 전환수
+    # --------------------------------------------------------
+
+    fig.add_trace(
+        go.Scatter(
+            x=x_values,
+            y=trend_df["conversion"],
+            name="전환수",
+            mode="lines+markers",
+            yaxis="y2",
+            hovertemplate=(
+                "%{x}<br>"
+                "전환수: %{y:,.0f}건"
+                "<extra></extra>"
+            )
+        )
+    )
+
+
+    # ========================================================
+    # 레이아웃
+    # ========================================================
+
+    fig.update_layout(
+
+        title=(
+            f"{trend_type} CPA + 전환수"
+            f"<br><sup>"
+            f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+            f" ~ "
+            f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+            f"</sup>"
+        ),
+
+        height=420,
+
+        margin=dict(
+            l=60,
+            r=60,
+            t=90,
+            b=70
+        ),
+
+        xaxis=dict(
+            title=trend_type,
+            type="category",
+            tickangle=-30,
+            automargin=True
+        ),
+
+        yaxis=dict(
+            title="CPA"
+        ),
+
+        yaxis2=dict(
+            title="전환수",
+            overlaying="y",
+            side="right"
+        ),
+
+        hovermode="x unified",
+
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.25,
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={
+            "displayModeBar": False
+        }
+    )
+
+
+# ============================================================
+# 일자별
+# ============================================================
+
+with trend_tab1:
+
+    draw_trend_chart("일자별")
+
+
+# ============================================================
+# 주차별
+# ============================================================
+
+with trend_tab2:
+
+    draw_trend_chart("주차별")
+
+
+# ============================================================
+# 월별
+# ============================================================
+
+with trend_tab3:
+
+    draw_trend_chart("월별")
+
+# ============================================================
 # 18. 캠페인 TOP 분석
 # ============================================================
 
