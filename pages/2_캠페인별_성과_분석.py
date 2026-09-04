@@ -61,11 +61,8 @@ SHEET_URL = (
 @st.cache_data(ttl=300)
 def load_data():
 
-    df = pd.read_csv(
-        SHEET_URL,
-        encoding="utf-8-sig"
-    )
-
+import requests
+from io import StringIO
     # --------------------------------------------------------
     # 컬럼명 정리
     # --------------------------------------------------------
