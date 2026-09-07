@@ -471,9 +471,10 @@ col1, col2, col3 = st.columns(
 with col1:
 
     # 데이터의 가장 마지막 날짜
-    latest_date = pd.Timestamp(
-        df["date"].max()
-    ).date()
+    latest_date = max_date
+
+    # 최신 데이터의 전일
+    yesterday = latest_date - pd.Timedelta(days=1)
 
 
     # --------------------------------------------------------
@@ -499,8 +500,8 @@ with col1:
 
     if period_option == "전일":
 
-        analysis_start = latest_date - pd.Timedelta(days=1)
-        analysis_end = latest_date - pd.Timedelta(days=1)
+        analysis_start = yesterday
+        analysis_end = yesterday
 
 
     # --------------------------------------------------------
@@ -531,7 +532,7 @@ with col1:
 
         analysis_start = st.date_input(
             "시작일",
-            value=latest_date,
+            value=yesterday,
             min_value=min_date,
             max_value=latest_date,
             key="detail_start_date"
@@ -539,12 +540,11 @@ with col1:
 
         analysis_end = st.date_input(
             "종료일",
-            value=latest_date,
+            value=yesterday,
             min_value=min_date,
             max_value=latest_date,
             key="detail_end_date"
         )
-
 # ============================================================
 # 6-2. 카테고리
 # ============================================================
