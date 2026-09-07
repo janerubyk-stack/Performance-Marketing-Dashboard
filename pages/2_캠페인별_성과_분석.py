@@ -470,14 +470,19 @@ col1, col2, col3 = st.columns(
 
 with col1:
 
-    analysis_start = st.date_input(
-        "시작일",
-        value=min_date,
-        min_value=min_date,
-        max_value=max_date,
-        key="analysis_start"
-    )
+latest_date = pd.Timestamp(
+    df["date"].max()
+).date()
 
+with col1:
+
+    selected_start_date = st.date_input(
+        "시작일",
+        value=latest_date,
+        min_value=latest_date,
+        max_value=latest_date,
+        key="detail_start_date"
+    )
 
     analysis_end = st.date_input(
         "종료일",
