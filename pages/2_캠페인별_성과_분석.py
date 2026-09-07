@@ -515,7 +515,6 @@ with col2:
 # ============================================================
 
 with col3:
-
     media_options = sorted(
         df["media"]
         .dropna()
@@ -523,14 +522,12 @@ with col3:
         .tolist()
     )
 
-
     selected_media = st.multiselect(
-        "매체",
+        "매체 선택",
         options=media_options,
         default=media_options,
-        key="detail_media"
+        key="media_filter"
     )
-
 
 # ============================================================
 # 7. 기간 오류
