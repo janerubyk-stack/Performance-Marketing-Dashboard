@@ -465,7 +465,7 @@ col1, col2, col3 = st.columns(
 
 
 # ============================================================
-# 6-1. 날짜
+# 6-1. 분석 기간
 # ============================================================
 
 with col1:
@@ -475,24 +475,75 @@ with col1:
         df["date"].max()
     ).date()
 
-    # 시작일은 항상 데이터의 마지막 날짜로 고정
-    analysis_start = st.date_input(
-        "시작일",
-        value=latest_date,
-        min_value=latest_date,
-        max_value=latest_date,
-        disabled=True,
-        key="detail_start_date"
+
+    # --------------------------------------------------------
+    # 분석 기간 선택
+    # --------------------------------------------------------
+
+    period_option = st.selectbox(
+        "분석 기간",
+        options=[
+            "전일",
+            "최근 7일",
+            "최근 30일",
+            "지정"
+        ],
+        index=0,
+        key="detail_period_option"
     )
 
-    # 종료일
-    analysis_end = st.date_input(
-        "종료일",
-        value=max_date,
-        min_value=min_date,
-        max_value=max_date,
-        key="analysis_end"
-    )
+
+    # --------------------------------------------------------
+    # 전일
+    # --------------------------------------------------------
+
+    if period_option == "전일":
+
+        analysis_start = latest_date - pd.Timedelta(days=1)
+        analysis_end = latest_date - pd.Timedelta(days=1)
+
+
+    # --------------------------------------------------------
+    # 최근 7일
+    # --------------------------------------------------------
+
+    elif period_option == "최근 7일":
+
+        analysis_start = latest_date - pd.Timedelta(days=6)
+        analysis_end = latest_date
+
+
+    # --------------------------------------------------------
+    # 최근 30일
+    # --------------------------------------------------------
+
+    elif period_option == "최근 30일":
+
+        analysis_start = latest_date - pd.Timedelta(days=29)
+        analysis_end = latest_date
+
+
+    # --------------------------------------------------------
+    # 지정
+    # --------------------------------------------------------
+
+    else:
+
+        analysis_start = st.date_input(
+            "시작일",
+            value=latest_date,
+            min_value=min_date,
+            max_value=latest_date,
+            key="detail_start_date"
+        )
+
+        analysis_end = st.date_input(
+            "종료일",
+            value=latest_date,
+            min_value=min_date,
+            max_value=latest_date,
+            key="detail_end_date"
+        )
 
 # ============================================================
 # 6-2. 카테고리
