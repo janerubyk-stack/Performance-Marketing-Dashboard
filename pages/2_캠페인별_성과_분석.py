@@ -473,9 +473,6 @@ with col1:
     # 데이터의 가장 마지막 날짜
     latest_date = max_date
 
-    # 최신 데이터의 전일
-    yesterday = latest_date - pd.Timedelta(days=1)
-
 
     # --------------------------------------------------------
     # 분석 기간 선택
@@ -496,12 +493,13 @@ with col1:
 
     # --------------------------------------------------------
     # 전일
+    # 최신 데이터 날짜를 전일로 사용
     # --------------------------------------------------------
 
     if period_option == "전일":
 
-        analysis_start = yesterday
-        analysis_end = yesterday
+        analysis_start = latest_date
+        analysis_end = latest_date
 
 
     # --------------------------------------------------------
@@ -510,7 +508,11 @@ with col1:
 
     elif period_option == "최근 7일":
 
-        analysis_start = latest_date - pd.Timedelta(days=6)
+        analysis_start = (
+            latest_date -
+            pd.Timedelta(days=6)
+        )
+
         analysis_end = latest_date
 
 
@@ -520,7 +522,11 @@ with col1:
 
     elif period_option == "최근 30일":
 
-        analysis_start = latest_date - pd.Timedelta(days=29)
+        analysis_start = (
+            latest_date -
+            pd.Timedelta(days=29)
+        )
+
         analysis_end = latest_date
 
 
@@ -532,7 +538,7 @@ with col1:
 
         analysis_start = st.date_input(
             "시작일",
-            value=yesterday,
+            value=latest_date,
             min_value=min_date,
             max_value=latest_date,
             key="detail_start_date"
@@ -540,11 +546,35 @@ with col1:
 
         analysis_end = st.date_input(
             "종료일",
-            value=yesterday,
+            value=latest_date,
             min_value=min_date,
             max_value=latest_date,
             key="detail_end_date"
         )
+
+
+    # --------------------------------------------------------
+    # 선택한 분석 기간 표시
+    # --------------------------------------------------------
+
+    if analysis_start == analysis_end:
+
+        period_text = pd.Timestamp(
+            analysis_start
+        ).strftime("%Y-%m-%d")
+
+    else:
+
+        period_text = (
+            f"{pd.Timestamp(analysis_start).strftime('%Y-%m-%d')}"
+            f" ~ "
+            f"{pd.Timestamp(analysis_end).strftime('%Y-%m-%d')}"
+        )
+
+
+    st.caption(
+        f"📅 {period_text}"
+    )
 # ============================================================
 # 6-2. 카테고리
 # ============================================================
