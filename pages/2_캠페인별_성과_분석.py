@@ -515,6 +515,7 @@ with col2:
 # ============================================================
 
 with col3:
+
     media_options = sorted(
         df["media"]
         .dropna()
@@ -522,13 +523,22 @@ with col3:
         .tolist()
     )
 
+    # 성과 비교 분석에서 사용한 매체 선택값이 있으면 사용
+    if "media_filter" in st.session_state:
+        default_media = [
+            media
+            for media in st.session_state["media_filter"]
+            if media in media_options
+        ]
+    else:
+        default_media = media_options
+
     selected_media = st.multiselect(
         "매체 선택",
         options=media_options,
-        default=media_options,
-        key="media_filter"
+        default=default_media,
+        key="detail_media"
     )
-
 # ============================================================
 # 7. 기간 오류
 # ============================================================
